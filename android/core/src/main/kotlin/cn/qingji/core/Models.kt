@@ -129,9 +129,11 @@ object LedgerEngine {
                 (candidate.transactionId != null && old.channel == candidate.channel && old.kind == candidate.kind && old.transactionId == candidate.transactionId)
         }
         if (strong != null) {
+            val pageUpdate = "页面识别（实验）" in candidate.sources && "reviewed" !in strong.editedFields
             val conflicting = strong.amountFen > 0 && candidate.amountFen > 0 && strong.amountFen != candidate.amountFen && "amount" !in strong.editedFields
             val refundReview = candidate.reason.contains("退款状态") && "reviewed" !in strong.editedFields
             val merged = strong.copy(
+                occurredAt = if (pageUpdate && "time" !in strong.editedFields && !candidate.reason.contains("交易时间未读取")) candidate.occurredAt else strong.occurredAt,
                 amountFen = if (strong.amountFen == 0L && "amount" !in strong.editedFields) candidate.amountFen else strong.amountFen,
                 merchant = if (strong.merchant == "未知商家" && "merchant" !in strong.editedFields) candidate.merchant else strong.merchant,
                 transactionId = strong.transactionId ?: candidate.transactionId,
@@ -142,7 +144,7 @@ object LedgerEngine {
                 eventKeys = strong.eventKeys + candidate.eventKeys,
                 category = if ("category" in strong.editedFields) strong.category else if (strong.category == Category.UNCATEGORIZED) candidate.category else strong.category,
                 status = if ((conflicting || refundReview) && strong.status != Status.IGNORED) Status.PENDING else strong.status,
-                reason = if (conflicting) "同一交易出现不同金额，请核对原始账单" else if (refundReview) candidate.reason else strong.reason
+                reason = if (conflicting) "同一交易出现不同金额，请核对原始账单" else if (refundReview || (pageUpdate && strong.status == Status.PENDING && strong.candidateIds.isEmpty())) candidate.reason else strong.reason
             )
             return IngestResult(existing.map { if (it.id == strong.id) merged else it }, "重复 / 补全", merged)
         }

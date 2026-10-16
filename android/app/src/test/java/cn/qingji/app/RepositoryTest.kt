@@ -26,6 +26,16 @@ class RepositoryTest {
         repo = LedgerRepository(db)
     }
     @After fun close() { db.close() }
+    @Test fun reviewedPageDuplicateCanFillMissingMerchantAndCategoryWithoutAddingSpend() = runBlocking {
+        repo.ingest(event.copy(merchant = "未知商家"))
+        val original = repo.snapshot().entries.single()
+        repo.ingest(event.copy(id = "page", status = Status.PENDING, merchant = "测试咖啡店", eventKeys = setOf("page:1"), sources = setOf("页面识别（实验）")))
+        val pending = repo.snapshot().entries.single { it.status == Status.PENDING }
+        repo.merge(pending.id, original.id)
+        val data = repo.snapshot()
+        assertEquals(1, data.entries.size); assertEquals(2800L, data.entries.single().amountFen)
+        assertEquals("测试咖啡店", data.entries.single().merchant); assertEquals(Category.FOOD, data.entries.single().category)
+    }
     @Test fun orderingSurvivesRepositoryRestartRenameAndEncryptedRestore() = runBlocking {
         val study = Category.custom("学习")
         repo.addCategory(study.label)

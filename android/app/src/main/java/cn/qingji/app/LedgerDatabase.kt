@@ -193,6 +193,7 @@ class LedgerRepository(private val db: LedgerDatabase) {
             transactionId = target.transactionId ?: pending.transactionId,
             relatedTransactionId = target.relatedTransactionId ?: pending.relatedTransactionId,
             merchant = if (target.merchant == "未知商家" && "merchant" !in target.editedFields) pending.merchant else target.merchant,
+            category = if (target.category == Category.UNCATEGORIZED && "category" !in target.editedFields) pending.category else target.category,
             eventKeys = target.eventKeys + pending.eventKeys, sources = target.sources + pending.sources
         ))))
         dao.removeEntry(pendingId)

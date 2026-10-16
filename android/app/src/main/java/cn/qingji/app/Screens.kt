@@ -227,7 +227,8 @@ import kotlin.math.abs
     onAuthorize: () -> Unit, onImport: () -> Unit, onBackup: () -> Unit, onRestore: () -> Unit,
     onRemoveRule: (MerchantRule) -> Unit, onReconnect: () -> Unit, onAppSettings: () -> Unit,
     updateState: UpdateUiState, onCheckUpdate: () -> Unit, onBackgroundUpdate: (Boolean) -> Unit, onOpenUpdate: () -> Unit,
-    categoryCount: Int, onManageCategories: () -> Unit, onExportAll: () -> Unit) {
+    categoryCount: Int, onManageCategories: () -> Unit, onExportAll: () -> Unit,
+    onEnablePage: () -> Unit, onDisablePage: () -> Unit, onViewPending: () -> Unit, onCopyPageDiagnostic: () -> Unit) {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp, 16.dp, 20.dp, 28.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
         item { Text("设置", style = MaterialTheme.typography.headlineLarge) }
         item { Panel(color = Color(0xFFE5EFE6)) {
@@ -243,6 +244,7 @@ import kotlin.math.abs
             if (health.access) TextButton(onClick = onReconnect) { Text("请求重新连接监听服务") }
             Text("系统可能限制后台运行或隐藏通知内容。授权不代表账单完整，请定期导入核对。", color = Muted, style = MaterialTheme.typography.bodySmall)
         } }
+        item { PaymentPagePanel(health.page, onEnablePage, onDisablePage, onViewPending, onCopyPageDiagnostic) }
         item { UpdatePanel(updateState, onCheckUpdate, onBackgroundUpdate, onOpenUpdate) }
         if (Build.MANUFACTURER.equals("Xiaomi", true) || Build.BRAND.equals("Redmi", true)) item { Panel {
             SectionTitle("小米手机后台设置")

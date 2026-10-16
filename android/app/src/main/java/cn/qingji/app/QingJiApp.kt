@@ -43,13 +43,13 @@ data class EntryFilter(val title: String, val start: Long? = null, val end: Long
             range.start.atStartOfDay(ledgerZone).toInstant().toEpochMilli(), range.endExclusive.atStartOfDay(ledgerZone).toInstant().toEpochMilli(), category, merchant)
     }
 }
-data class Diagnostics(val access: Boolean = false, val connectedAt: Long = 0, val lastAt: Long = 0, val lastAction: String = "", val channel: String = "", val error: String = "", val wechat: String = "未安装", val alipay: String = "未安装")
+data class Diagnostics(val access: Boolean = false, val connectedAt: Long = 0, val lastAt: Long = 0, val lastAction: String = "", val channel: String = "", val error: String = "", val wechat: String = "未安装", val alipay: String = "未安装", val page: PaymentPageHealth = PaymentPageHealth())
 fun diagnostics(context: Context): Diagnostics {
     val prefs = context.getSharedPreferences("diagnostics", Context.MODE_PRIVATE)
     fun version(pkg: String) = runCatching { context.packageManager.getPackageInfo(pkg, 0).versionName ?: "未知版本" }.getOrDefault("未安装")
     return Diagnostics(context.getSystemService(NotificationManager::class.java).isNotificationListenerAccessGranted(ComponentName(context, PaymentNotificationService::class.java)),
         prefs.getLong("connectedAt", 0), prefs.getLong("lastCandidateAt", 0), prefs.getString("lastAction", "").orEmpty(), prefs.getString("lastChannel", "").orEmpty(), prefs.getString("lastError", "").orEmpty(),
-        version("com.tencent.mm"), version("com.eg.android.AlipayGphone"))
+        version("com.tencent.mm"), version("com.eg.android.AlipayGphone"), PaymentPageSettings.health(context))
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -69,6 +69,7 @@ fun diagnostics(context: Context): Diagnostics {
     var editing by remember { mutableStateOf<Entry?>(null) }
     var showEditor by remember { mutableStateOf(false) }
     var showDisclosure by remember { mutableStateOf(false) }
+    var showPageDisclosure by remember { mutableStateOf(false) }
     var showCategories by remember { mutableStateOf(false) }
     var backupMode by remember { mutableStateOf<String?>(null) }
     var restoreUri by remember { mutableStateOf<Uri?>(null) }
@@ -122,7 +123,12 @@ fun diagnostics(context: Context): Diagnostics {
                         onAppSettings = { runCatching { context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:${context.packageName}".toUri())) }.onFailure { vm.messages.tryEmit("请长按清记图标打开应用信息") } },
                         onReconnect = { NotificationListenerService.requestRebind(ComponentName(context, PaymentNotificationService::class.java)); health = diagnostics(context) },
                         updateState = updateState, onCheckUpdate = { updater.check() }, onBackgroundUpdate = updater::background, onOpenUpdate = updater::openRelease,
-                        categoryCount = categories.size, onManageCategories = { showCategories = true }, onExportAll = { vm.prepareCsv { csvLauncher.launch("清记全部账单-$today.csv") } })
+                        categoryCount = categories.size, onManageCategories = { showCategories = true }, onExportAll = { vm.prepareCsv { csvLauncher.launch("清记全部账单-$today.csv") } },
+                        onEnablePage = { showPageDisclosure = true }, onDisablePage = { PaymentPageSettings.setEnabled(context, false); health = diagnostics(context) },
+                        onViewPending = { openFilter(EntryFilter("待确认账单", pendingOnly = true)) }, onCopyPageDiagnostic = {
+                            context.getSystemService(android.content.ClipboardManager::class.java).setPrimaryClip(android.content.ClipData.newPlainText("清记页面识别诊断", PaymentPageSettings.diagnostic(context)))
+                            vm.messages.tryEmit("识别诊断已复制，不包含交易字段或完整页面")
+                        })
                 }
             }
         }
@@ -133,6 +139,10 @@ fun diagnostics(context: Context): Diagnostics {
         }
     }
     AppUpdateDialog(updateState, updater::dismiss, updater::download, updater::cancelDownload, updater::install)
+    if (showPageDisclosure) PaymentPageDisclosure(onDismiss = { showPageDisclosure = false }, onConfirm = {
+        showPageDisclosure = false; PaymentPageSettings.setEnabled(context, true); health = diagnostics(context)
+        runCatching { PaymentPageSettings.openSettings(context) }.onFailure { vm.messages.tryEmit("请在系统设置中搜索“无障碍”，开启清记的支付页面识别") }
+    })
     if (showEditor) EntryEditor(editing, entries, onDismiss = { showEditor = false }, onSave = { entry, rule -> vm.save(entry, rule); showEditor = false },
         onIgnore = { vm.ignore(it); showEditor = false }, onMerge = { id, target -> vm.merge(id, target); showEditor = false }, categories = categories)
     if (showCategories) CategoryManagerDialog(categories, entries, rules, busy, onDismiss = { showCategories = false }, onAdd = vm::addCategory, onRename = vm::renameCategory, onDelete = vm::deleteCategory, onMove = vm::moveCategory, onRestoreBuiltIns = vm::restoreBuiltInCategories)

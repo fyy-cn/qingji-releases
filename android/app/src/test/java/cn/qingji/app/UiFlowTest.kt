@@ -39,7 +39,7 @@ class UiFlowTest {
         compose.waitForIdle()
         val file = File(directory, "$name.png")
         file.parentFile?.mkdirs()
-        if (name == "06-categories") captureScreenRoboImage(file.absolutePath)
+        if (name in setOf("06-categories", "07-page-recognition-disclosure")) captureScreenRoboImage(file.absolutePath)
         else compose.activity.window.decorView.captureRoboImage(file.absolutePath)
     }
 
@@ -94,6 +94,13 @@ class UiFlowTest {
         compose.onNodeWithText("你的账本，留在你的手机里。").assertIsDisplayed()
         compose.onNodeWithText("通知使用权：未授权").assertIsDisplayed()
         screenshot("04-settings")
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("开启页面识别"))
+        compose.onNodeWithText("实验功能：关闭").assertExists()
+        compose.onNodeWithText("开启页面识别").performClick()
+        compose.onNodeWithText("启用支付页面识别实验").assertIsDisplayed()
+        screenshot("07-page-recognition-disclosure")
+        compose.onNodeWithText("暂不开启").performClick()
+        assertTrue(!PaymentPageSettings.enabled(compose.activity))
         runBlocking(Dispatchers.IO) { repeat(8) { repo.moveCategory(Category.custom("学习"), -1) } }
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("管理消费分类"))
         compose.onNodeWithText("管理消费分类").performClick()
@@ -124,16 +131,16 @@ class UiFlowTest {
         screenshot("05-update-settings")
         val updater = ViewModelProvider(compose.activity)[UpdateViewModel::class.java]
         compose.runOnUiThread {
-            updater.state.value = UpdateUiState(release = UpdateRelease(packageName = "cn.qingji.app", versionCode = BuildConfig.VERSION_CODE + 1L, versionName = "1.4.0", minSdk = 29,
-                apkUrl = "https://github.com/fyy-cn/qingji-releases/releases/download/v1.4.0/test.apk", sha256 = "0".repeat(64), sizeBytes = 1024,
-                publishedAt = "2026-10-16", notes = listOf("测试更新说明")), showDialog = true, message = "发现新版本 1.4.0")
+            updater.state.value = UpdateUiState(release = UpdateRelease(packageName = "cn.qingji.app", versionCode = BuildConfig.VERSION_CODE + 1L, versionName = "1.5.0", minSdk = 29,
+                apkUrl = "https://github.com/fyy-cn/qingji-releases/releases/download/v1.5.0/test.apk", sha256 = "0".repeat(64), sizeBytes = 1024,
+                publishedAt = "2026-10-16", notes = listOf("测试更新说明")), showDialog = true, message = "发现新版本 1.5.0")
         }
-        compose.onNodeWithText("清记 1.4.0").assertIsDisplayed()
+        compose.onNodeWithText("清记 1.5.0").assertIsDisplayed()
         compose.onNodeWithText("下载并更新").assertIsDisplayed()
         compose.onNodeWithText("稍后再说").performClick()
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("查看新版"))
         compose.onNodeWithText("查看新版").performClick()
-        compose.onNodeWithText("清记 1.4.0").assertIsDisplayed()
+        compose.onNodeWithText("清记 1.5.0").assertIsDisplayed()
         compose.onNodeWithText("稍后再说").performClick()
         compose.runOnUiThread { compose.activity.viewModelStore.clear() }
         compose.waitForIdle()

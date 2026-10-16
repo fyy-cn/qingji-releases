@@ -4,7 +4,7 @@
 
 发布仓库：https://github.com/fyy-cn/qingji-releases
 
-1.3.0提供分类排序与内置分类删除，修复发布页图片，并公开对应版本的完整Android源码包。发布状态见[验证报告](Verification.md)。旧Sites地址实际访问403，已不再使用。
+1.4.0新增可选的[支付页面识别实验](PageRecognition.md)，默认关闭，需要在手机上手动授权并验证；保留分类排序、CSV导出与完整源码包。发布状态见[验证报告](Verification.md)。旧Sites地址实际访问403，已不再使用。
 
 ## 分类与CSV
 

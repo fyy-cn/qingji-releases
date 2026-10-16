@@ -19,8 +19,8 @@ import java.io.File
 class TestReleaseClient : ReleaseClient {
     var calls = 0
     var fail = false
-    var release = UpdateRelease(packageName = "cn.qingji.app", versionCode = BuildConfig.VERSION_CODE + 1L, versionName = "1.4.0", minSdk = 29,
-        apkUrl = "https://github.com/fyy-cn/qingji-releases/releases/download/v1.4.0/test.apk", sha256 = "0".repeat(64), sizeBytes = 1024,
+    var release = UpdateRelease(packageName = "cn.qingji.app", versionCode = BuildConfig.VERSION_CODE + 1L, versionName = "1.5.0", minSdk = 29,
+        apkUrl = "https://github.com/fyy-cn/qingji-releases/releases/download/v1.5.0/test.apk", sha256 = "0".repeat(64), sizeBytes = 1024,
         publishedAt = "2026-10-16", notes = listOf("测试版本：改进消费分析"))
     override suspend fun latest(): UpdateRelease { calls++; if (fail) error("offline"); return release }
     override suspend fun download(release: UpdateRelease, destination: File, progress: (Long) -> Unit) { error("Test downloads are disabled") }
@@ -46,7 +46,7 @@ class UpdateFlowTest {
         val vm = UpdateViewModel(app)
         vm.resume()
         assertTrue(vm.state.value.showDialog)
-        assertEquals("1.4.0", vm.state.value.release?.versionName)
+        assertEquals("1.5.0", vm.state.value.release?.versionName)
         vm.dismiss()
         val restarted = UpdateViewModel(app)
         restarted.resume()
