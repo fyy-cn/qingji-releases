@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "packageName": "cn.qingji.app",
+  "versionCode": 3,
+  "versionName": "1.2.0",
+  "minSdk": 29,
+  "apkUrl": "https://github.com/fyy-cn/qingji-releases/releases/download/v1.2.0/QingJi-1.2.0-3.apk",
+  "sha256": "5a84f2e0ef2f8104267015a5061af3aeedc59e9672ba885b9271eeec498865f6",
+  "sizeBytes": 2760810,
+  "publishedAt": "2026-10-16T15:58:11+08:00",
+  "notes": [
+    "新增自定义消费分类：支持新增、重命名、删除，并同步账单、商家规则、统计和备份。",
+    "新增CSV导出：可导出当前搜索筛选结果，或在设置中导出全部账单。",
+    "CSV支持中文、精确金额、交易状态、备注换行及长交易号保护。",
+    "新增应用内更新：打开自动检查、后台每日检查，确认后下载并覆盖安装。",
+    "兼容旧账本与旧加密备份，升级保留本机数据；账单与通知不上传。"
+  ]
+}

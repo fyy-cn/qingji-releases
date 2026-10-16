@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>清记 · 把每一笔，记清楚。</title>
+  <meta name="description" content="清记安卓记账应用，微信与支付宝通知记账、账单导入、消费变化分析。统一下载，在应用内接收后续更新。">
+  <meta name="theme-color" content="#1b4939">
+  <link rel="canonical" href="https://fyy-cn.github.io/qingji-releases/">
+  <link rel="icon" href="./icon.svg" type="image/svg+xml">
+  <style>
+    :root{--paper:#f8f7ef;--pine:#1b4939;--ink:#19392e;--muted:#6b776d;--lime:#d5ec9c;--line:#dbe0d2}
+    *{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;line-height:1.7}
+    a{color:inherit}button{font:inherit}a,button{touch-action:manipulation}a:focus-visible,button:focus-visible,summary:focus-visible{outline:3px solid #83a65b;outline-offset:5px}
+    .wrap{max-width:1120px;padding:0 32px;margin:auto}header{display:flex;align-items:center;justify-content:space-between;padding-top:28px;padding-bottom:24px;border-bottom:1px solid var(--line)}
+    .brand{display:flex;gap:11px;align-items:center;text-decoration:none;font-weight:700;font-size:21px;letter-spacing:3px}.brand img{width:38px;height:38px}.small-link{font-size:14px;text-decoration:none;border-bottom:1px solid var(--pine)}
+    .hero{display:grid;grid-template-columns:1.2fr 1fr;align-items:center;gap:64px;padding:68px 0 72px}.eyebrow{color:var(--pine);font-size:12px;letter-spacing:3px;font-weight:600}.tag{display:inline-block;border:1px solid var(--line);padding:4px 12px;border-radius:30px;font-size:12px;letter-spacing:1px;margin-bottom:24px}
+    h1{font-size:clamp(38px,4.5vw,59px);line-height:1.3;letter-spacing:-2px;font-weight:650;margin:0 0 24px}h1 span{display:block;color:#728268}p{margin:0 0 20px}.intro{color:var(--muted);max-width:430px;font-size:16px}.actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:30px 0 12px}
+    .download{display:inline-flex;align-items:center;gap:24px;background:var(--pine);color:#fff;border:0;border-radius:12px;padding:15px 23px;text-decoration:none;font-weight:600;min-height:56px}.download[aria-disabled="true"]{opacity:.55;pointer-events:none}.download:hover{background:#286347}.download span{font-size:20px;font-weight:400}
+    .version{font-size:12px;color:var(--muted)}.status{font-size:13px;color:var(--muted);min-height:24px}.scan{display:flex;align-items:center;gap:14px;margin-top:28px}.scan img{width:76px;height:76px;border:1px solid var(--line);border-radius:8px;padding:4px;background:#fff}.scan p{font-size:12px;color:var(--muted);margin:0}.scan strong{display:block;font-size:13px;color:var(--ink);font-weight:500}
+    .preview{position:relative;display:flex;justify-content:center;padding:20px 30px 30px;background:#e8ecd9;border-radius:160px 160px 28px 28px;min-width:0}.preview:before{content:"本机账本 / 你的消费轨迹";position:absolute;bottom:-14px;left:-25px;background:var(--lime);padding:12px 20px;border-radius:6px;font-size:12px;letter-spacing:1px;transform:rotate(-3deg)}
+    .phone{width:244px;max-width:100%;border:7px solid #244436;border-radius:32px;overflow:hidden;box-shadow:0 18px 30px #19392e20;background:#f8f7ef}.phone img{display:block;width:100%;height:auto}.caption{font-size:11px;color:var(--muted);margin-top:18px;text-align:center}
+    .strip{border-top:1px solid var(--line);border-bottom:1px solid var(--line);display:grid;grid-template-columns:repeat(3,1fr);padding:28px 0;gap:28px}.strip h2{font-size:17px;font-weight:600;margin:0 0 7px}.strip p{color:var(--muted);font-size:13px;margin:0;max-width:285px}.index{font-family:monospace;font-size:12px;display:block;color:#8b997d;margin-bottom:12px}
+    .section{display:grid;grid-template-columns:1fr 1.4fr;gap:80px;padding:60px 0;border-bottom:1px solid var(--line)}.section h2{margin:8px 0 14px;font-size:28px;line-height:1.4;font-weight:600}.section .aside{color:var(--muted);font-size:14px;max-width:310px}.steps{list-style:none;padding:0;margin:0;counter-reset:steps}.steps li{counter-increment:steps;position:relative;padding:0 0 24px 44px}.steps li:last-child{padding-bottom:0}.steps li:before{content:counter(steps);position:absolute;left:0;top:0;background:#e6ecd9;border-radius:50%;width:27px;height:27px;text-align:center;line-height:27px;font-size:13px}.steps strong{display:block;font-size:15px;font-weight:600}.steps p{font-size:13px;color:var(--muted);margin:5px 0 0}
+    .release-head{display:flex;justify-content:space-between;align-items:center;gap:12px}#release-name{font-size:22px;font-weight:600}#release-date{font-size:12px;color:var(--muted)}#notes{font-size:14px;padding-left:19px;margin-top:18px}#notes li{margin:10px 0}.hash{margin-top:22px;padding:16px;background:#eeefe4;border-radius:9px;font-size:11px;line-height:1.6;overflow-wrap:anywhere}.hash button{background:none;border:0;border-bottom:1px solid var(--muted);padding:0;color:var(--pine);cursor:pointer;margin-left:14px;font-size:12px}#hash{display:block;font-family:monospace;margin-top:7px}
+    details{border-bottom:1px solid var(--line);padding:16px 0;font-size:14px}summary{cursor:pointer;font-weight:500}details p{margin:12px 0 0;color:var(--muted);font-size:13px}footer{padding:28px 0 40px;display:flex;justify-content:space-between;gap:20px;color:var(--muted);font-size:12px}footer a{text-decoration:none}
+    @media(max-width:760px){.wrap{padding:0 22px}.hero{grid-template-columns:1fr;gap:40px;padding:40px 0 45px}h1{letter-spacing:-1px}.preview{max-width:350px;width:100%;margin:auto}.preview:before{left:-5px}.phone{width:222px}.strip{gap:18px;grid-template-columns:1fr}.strip>div{display:grid;grid-template-columns:30px 1fr;gap:0 8px}.strip .index{grid-row:span 2;margin:3px 0}.strip p{max-width:none}.strip h2{font-size:16px}.section{grid-template-columns:1fr;gap:20px;padding:36px 0}.section h2{font-size:25px}.section .aside{max-width:none}.scan{margin-top:20px}.scan img{width:65px;height:65px}footer{flex-direction:column;gap:8px}}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <header><a href="./" class="brand"><img src="/icon.svg" alt="">清记</a><a href="#release" class="small-link">版本与更新 ↗</a></header>
+  <main>
+    <section class="hero">
+      <div>
+        <div class="tag">安卓记账 · 公开测试版</div>
+        <h1>把每一笔，<span>记清楚。</span></h1>
+        <p class="intro">从支付通知到消费趋势，慢慢看懂钱花在了哪里。账单留在手机里，清记陪你把日常收支理清。</p>
+        <div class="actions"><a id="download" class="download" aria-disabled="true">下载 Android 版 <span aria-hidden="true">↓</span></a></div>
+        <p class="version" id="version">正在读取最新版本…</p>
+        <div id="status" class="status" role="status" aria-live="polite"></div>
+        <div class="scan"><img src="./download-qr.svg" alt="扫码打开本下载页"><p><strong>手机扫码，直接下载</strong>之后在清记内检查更新，保留已有账本。</p></div>
+      </div>
+      <div><div class="preview"><div class="phone"><img src="./analysis.png" alt="清记消费分析页面：净消费、退款、分类与消费变化" width="1080" height="2340"></div></div><p class="caption">界面示意：截图中的消费为合成测试数据。</p></div>
+    </section>
+    <section class="strip" aria-label="清记的功能">
+      <div><span class="index">01 /</span><h2>少一些手动输入</h2><p>识别微信、支付宝的支付候选通知，支持导入账单补齐，疑似重复由你确认。</p></div>
+      <div><span class="index">02 /</span><h2>看见消费的变化</h2><p>自定义消费分类，按日、周、月、年查看消费变化；账单可导出为 CSV。</p></div>
+      <div><span class="index">03 /</span><h2>账本由自己保管</h2><p>无需注册，本机存储。主动导出带口令的加密备份，联网用于获取应用更新。</p></div>
+    </section>
+    <section class="section" id="install">
+      <div><span class="eyebrow">GET STARTED</span><h2>装好这一次，<br>后续在应用里更新。</h2><p class="aside">适用于 Android 10 及以上。已有旧版清记，直接覆盖安装，保留你的账本和分类规则。</p></div>
+      <ol class="steps">
+        <li><strong>在手机浏览器下载 APK</strong><p>微信内无法下载时，点击右上角菜单，选择在浏览器中打开此页。</p></li>
+        <li><strong>按系统提示确认安装</strong><p>如果系统询问，请允许当前浏览器安装此文件。已有清记请覆盖更新；无需卸载。</p></li>
+        <li><strong>允许新版提醒，按需开启记账权限</strong><p>打开清记 → 设置 → 应用更新，允许新版通知提醒。支付通知记账需要单独开启“通知使用权”。</p></li>
+        <li><strong>之后打开清记，就会检查新版</strong><p>后台每天定期检查一次，时间受省电和网络条件影响；新版发布可能需要几分钟同步。发现新版后，查看说明、下载并确认安装。</p></li>
+      </ol>
+    </section>
+    <section class="section" id="release">
+      <div><span class="eyebrow">RELEASE NOTES</span><h2>这次，更新了什么。</h2><p class="aside">这个链接始终提供当前公开版本。更新会保留账本；建议你也定期在设置中创建加密备份。</p></div>
+      <div><div class="release-head"><span id="release-name">读取版本中</span><time id="release-date"></time></div><ul id="notes"></ul><div class="hash">安装包 SHA-256 <button id="copy-hash" type="button" disabled>复制校验值</button><code id="hash">—</code></div></div>
+    </section>
+    <section class="section">
+      <div><span class="eyebrow">BEFORE YOU USE</span><h2>关于记账和隐私。</h2></div>
+      <div>
+        <details><summary>能自动记录每一笔支付吗？</summary><p>识别依赖手机实际收到的通知。通知内容隐藏、模板变化或后台限制都可能导致遗漏。请定期导入微信、支付宝账单核对，现金等消费可手动补记。真实支付渠道覆盖仍需逐步验证。</p></details>
+        <details><summary>应用联网会上传我的账本吗？</summary><p>更新检查只请求公开版本信息，确认下载后获取 APK，不发送账单、原始支付通知或备份。网络请求会携带常规连接信息，例如 IP 地址。本站没有账号、广告、访问统计脚本或账单上传入口。</p></details>
+        <details><summary>每次更新需要卸载吗？</summary><p>请直接覆盖安装，同一包名与签名可保留应用数据。卸载或清除数据会删除本机账本。备份文件请自己妥善保管，忘记口令无法恢复。</p></details>
+        <details><summary>为什么没有立即收到更新通知？</summary><p>打开应用会自动检查，后台每天尝试检查一次。手机离线、省电、关闭通知或强制停止应用可能推迟提醒，可以在设置中点击“检查更新”。当前采用定期检查，没有即时推送通道。</p></details>
+      </div>
+    </section>
+  </main>
+  <footer><span>清记 / QINGJI · 让消费轨迹清晰一点。</span><a href="#install">安装说明 ↑</a></footer>
+</div>
+<script>
+  const status = document.querySelector('#status');
+  let release;
+  fetch('./releases/latest.json', {cache:'no-store'}).then(r=>{if(!r.ok)throw Error('http');return r.json()}).then(data=>{
+    const url = new URL(data.apkUrl);
+    if(url.origin!=='https://github.com' || !url.pathname.startsWith('/fyy-cn/qingji-releases/releases/download/') || !url.pathname.endsWith('.apk') || url.protocol!=='https:' || data.packageName!=='cn.qingji.app' || !/^[a-f0-9]{64}$/i.test(data.sha256))throw Error('invalid');
+    release=data;
+    const link=document.querySelector('#download'); link.href=url.href;link.download='QingJi-'+data.versionName+'.apk';link.removeAttribute('aria-disabled');
+    document.querySelector('#version').textContent='v'+data.versionName+' · '+(data.sizeBytes/1024/1024).toFixed(1)+' MB · Android 10+';
+    document.querySelector('#release-name').textContent='v'+data.versionName;
+    document.querySelector('#release-date').textContent=data.publishedAt.slice(0,10);
+    const notes=document.querySelector('#notes');for(const note of data.notes){const li=document.createElement('li');li.textContent=note;notes.append(li)}
+    document.querySelector('#hash').textContent=data.sha256;document.querySelector('#copy-hash').disabled=false;
+    status.textContent='点击下载后，按手机系统提示安装。';
+  }).catch(()=>{document.querySelector('#version').textContent='版本信息暂时不可用';status.textContent='请稍后刷新此页，或在清记设置中检查更新。'});
+  document.querySelector('#copy-hash').addEventListener('click',async()=>{if(!release)return;try{await navigator.clipboard.writeText(release.sha256);status.textContent='已复制安装包校验值。'}catch{status.textContent='请长按或选中下方 SHA-256 手动复制。'}});
+</script>
+</body></html>
