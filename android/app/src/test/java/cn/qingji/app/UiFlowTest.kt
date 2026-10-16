@@ -1,0 +1,143 @@
+package cn.qingji.app
+
+import androidx.compose.ui.test.*
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import com.github.takahirom.roborazzi.captureRoboImage
+import com.github.takahirom.roborazzi.captureScreenRoboImage
+import java.io.File
+import cn.qingji.core.BackupData
+import cn.qingji.core.UpdateRelease
+import cn.qingji.core.Entry
+import cn.qingji.core.Channel
+import cn.qingji.core.Category
+import android.app.Activity
+import android.content.Intent
+import android.net.Uri
+import org.robolectric.Shadows
+import java.io.ByteArrayOutputStream
+import androidx.lifecycle.ViewModelProvider
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
+import org.junit.Rule
+import org.junit.Test
+import org.junit.Assert.assertTrue
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import org.robolectric.annotation.LooperMode
+import org.robolectric.annotation.GraphicsMode
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35], application = OfflineTestApplication::class, qualifiers = "zh-rCN-w411dp-h891dp-420dpi")
+@LooperMode(LooperMode.Mode.PAUSED)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+class UiFlowTest {
+    @get:Rule val compose = createAndroidComposeRule<MainActivity>()
+
+    private fun screenshot(name: String) {
+        val directory = System.getProperty("qingji.screenshots") ?: return
+        compose.waitForIdle()
+        val file = File(directory, "$name.png")
+        file.parentFile?.mkdirs()
+        if (name == "06-categories") captureScreenRoboImage(file.absolutePath)
+        else compose.activity.window.decorView.captureRoboImage(file.absolutePath)
+    }
+
+    @Test fun userCanRecordExpenseAndNavigateToLedgerAnalysisAndSettingsWithoutNotificationAccess() {
+        val repo = (compose.activity.application as QingJiApplication).repository
+        runBlocking(Dispatchers.IO) { repo.restore(BackupData(entries = emptyList(), rules = emptyList(), imports = emptyList())) }
+        screenshot("01-home")
+        compose.onNodeWithText("记一笔", useUnmergedTree = true).performClick()
+        compose.onNodeWithText("金额（元）").performTextInput("28.50")
+        compose.onNodeWithText("商家 / 收款方").performTextInput("测试面馆")
+        compose.onNodeWithText("新增自定义分类").performClick()
+        compose.onNodeWithText("分类名称").performScrollTo().performTextInput("学习")
+        compose.onNodeWithText("保存分类").performScrollTo().performClick()
+        compose.onNodeWithText("学习").assertExists()
+        compose.onNodeWithText("保存账单").performClick()
+        compose.waitUntil(15000) { runBlocking(Dispatchers.IO) { repo.snapshot().entries.any { it.merchant == "测试面馆" && it.amountFen == 2850L } } }
+        compose.waitForIdle()
+        compose.onNodeWithText("账单", useUnmergedTree = true).performClick()
+        compose.waitUntil(15000) { compose.onAllNodesWithText("测试面馆").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("测试面馆").assertIsDisplayed()
+        assertTrue(runBlocking(Dispatchers.IO) { repo.snapshot().entries.first { it.merchant == "测试面馆" }.category.isCustom })
+        screenshot("02-ledger")
+        val excluded = Entry(amountFen = 1000, occurredAt = System.currentTimeMillis(), merchant = "不应导出的商家", channel = Channel.MANUAL)
+        runBlocking(Dispatchers.IO) { repo.save(excluded, false) }
+        compose.onNodeWithText("搜索商家、分类、备注或交易号").performTextInput("测试面馆")
+        compose.onNodeWithText("导出CSV").performClick()
+        val activity = Shadows.shadowOf(compose.activity)
+        compose.waitUntil(15000) {
+            Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            activity.peekNextStartedActivityForResult() != null
+        }
+        val request = activity.nextStartedActivityForResult.intent
+        org.junit.Assert.assertEquals(Intent.ACTION_CREATE_DOCUMENT, request.action)
+        org.junit.Assert.assertEquals("text/csv", request.type)
+        val destination = Uri.parse("content://qingji-test/export.csv")
+        val csv = ByteArrayOutputStream()
+        Shadows.shadowOf(compose.activity.contentResolver).registerOutputStream(destination, csv)
+        compose.runOnUiThread { activity.receiveResult(request, Activity.RESULT_OK, Intent().setData(destination)) }
+        compose.waitUntil(15000) {
+            Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            csv.toString("UTF-8").contains("测试面馆")
+        }
+        assertTrue(csv.toString("UTF-8").contains("学习"))
+        assertTrue(!csv.toString("UTF-8").contains("不应导出的商家"))
+        runBlocking(Dispatchers.IO) { repo.ignore(excluded.id) }
+        compose.onNode(hasSetTextAction()).performTextClearance()
+        compose.onNodeWithText("分析", useUnmergedTree = true).performClick()
+        compose.onNodeWithText("消费分析").assertIsDisplayed()
+        assertTrue(compose.onAllNodesWithText("¥28.50").fetchSemanticsNodes().isNotEmpty())
+        screenshot("03-analysis")
+        compose.onNodeWithText("设置", useUnmergedTree = true).performClick()
+        compose.onNodeWithText("你的账本，留在你的手机里。").assertIsDisplayed()
+        compose.onNodeWithText("通知使用权：未授权").assertIsDisplayed()
+        screenshot("04-settings")
+        runBlocking(Dispatchers.IO) { repeat(8) { repo.moveCategory(Category.custom("学习"), -1) } }
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("管理消费分类"))
+        compose.onNodeWithText("管理消费分类").performClick()
+        compose.onNodeWithText("学习").assertExists()
+        compose.onNodeWithContentDescription("下移学习").performClick()
+        compose.waitUntil(15000) { runBlocking(Dispatchers.IO) { repo.snapshot().categoryPreferences.single { it.category.label == "学习" }.position == 1 } }
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("上移学习").performClick()
+        compose.waitUntil(15000) { runBlocking(Dispatchers.IO) { repo.snapshot().categoryPreferences.single { it.category.label == "学习" }.position == 0 } }
+        compose.onNodeWithContentDescription("管理学习").performClick()
+        compose.onNodeWithText("重命名").performClick()
+        compose.onNodeWithText("分类名称").performScrollTo().performTextReplacement("进修")
+        compose.onNodeWithText("保存分类").performScrollTo().performClick()
+        compose.waitUntil(15000) { runBlocking(Dispatchers.IO) { repo.snapshot().customCategories.any { it.label == "进修" } } }
+        compose.waitUntil(15000) { compose.onAllNodesWithText("进修").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("进修").assertExists()
+        compose.onNodeWithContentDescription("管理购物").performScrollTo().performClick()
+        compose.onNodeWithText("删除分类").performClick()
+        compose.onNodeWithText("删除“购物”？").assertExists()
+        compose.onNodeWithText("删除分类").performClick()
+        compose.waitUntil(15000) { runBlocking(Dispatchers.IO) { repo.snapshot().categoryPreferences.any { it.category == Category.SHOPPING && it.hidden } } }
+        compose.onNodeWithText("购物").assertDoesNotExist()
+        screenshot("06-categories")
+        compose.onNodeWithText("完成").performClick()
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("应用更新"))
+        compose.onNodeWithText("应用更新").assertIsDisplayed()
+        compose.onNodeWithText("检查更新").assertExists()
+        screenshot("05-update-settings")
+        val updater = ViewModelProvider(compose.activity)[UpdateViewModel::class.java]
+        compose.runOnUiThread {
+            updater.state.value = UpdateUiState(release = UpdateRelease(packageName = "cn.qingji.app", versionCode = BuildConfig.VERSION_CODE + 1L, versionName = "1.4.0", minSdk = 29,
+                apkUrl = "https://github.com/fyy-cn/qingji-releases/releases/download/v1.4.0/test.apk", sha256 = "0".repeat(64), sizeBytes = 1024,
+                publishedAt = "2026-10-16", notes = listOf("测试更新说明")), showDialog = true, message = "发现新版本 1.4.0")
+        }
+        compose.onNodeWithText("清记 1.4.0").assertIsDisplayed()
+        compose.onNodeWithText("下载并更新").assertIsDisplayed()
+        compose.onNodeWithText("稍后再说").performClick()
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("查看新版"))
+        compose.onNodeWithText("查看新版").performClick()
+        compose.onNodeWithText("清记 1.4.0").assertIsDisplayed()
+        compose.onNodeWithText("稍后再说").performClick()
+        compose.runOnUiThread { compose.activity.viewModelStore.clear() }
+        compose.waitForIdle()
+    }
+}
+
+class OfflineTestApplication : QingJiApplication() { override val updatesEnabled = false }
