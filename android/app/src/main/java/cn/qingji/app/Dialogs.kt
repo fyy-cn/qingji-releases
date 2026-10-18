@@ -42,8 +42,8 @@ import java.time.format.ResolverStyle
     }
 }
 
-@Composable fun EntryEditor(seed: Entry?, allEntries: List<Entry>, onDismiss: () -> Unit, onSave: (Entry, Boolean) -> Unit,
-    onIgnore: (Entry) -> Unit, onMerge: (String, String) -> Unit, categories: List<Category> = Category.entries) {
+@Composable fun EntryEditor(seed: Entry?, allEntries: List<Entry>, onDismiss: () -> Unit, onSave: (Entry, Boolean, String?) -> Unit,
+    onIgnore: (Entry) -> Unit, onMerge: (String, String) -> Unit, categories: List<Category> = Category.entries, templates: List<QuickTemplate> = emptyList()) {
     var amount by remember(seed?.id) { mutableStateOf(seed?.amountFen?.takeIf { it > 0 }?.let(::money) ?: "") }
     var merchant by remember(seed?.id) { mutableStateOf(seed?.merchant?.takeUnless { it == "未知商家" } ?: "") }
     var category by remember(seed?.id) { mutableStateOf(seed?.category ?: Category.UNCATEGORIZED) }
@@ -57,6 +57,7 @@ import java.time.format.ResolverStyle
     var showRaw by remember { mutableStateOf(false) }
     var yuanConfirmed by remember { mutableStateOf(seed == null || seed.currency == "CNY") }
     var error by remember { mutableStateOf("") }
+    var appliedTemplateId by remember(seed?.id) { mutableStateOf<String?>(null) }
     var addCategory by remember { mutableStateOf(false) }
     fun save() {
         val fen = parseFen(amount)
@@ -79,7 +80,7 @@ import java.time.format.ResolverStyle
             if (seed == null || at != base.occurredAt) add("time")
         }
         onSave(base.copy(amountFen = fen, currency = "CNY", occurredAt = at, merchant = newMerchant, category = category, kind = kind, channel = channel,
-            note = note, status = Status.CONFIRMED, editedFields = edited, reason = "", candidateIds = emptyList()), makeRule)
+            note = note, status = Status.CONFIRMED, editedFields = edited, reason = "", candidateIds = emptyList()), makeRule, appliedTemplateId)
     }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxWidth().padding(12.dp).imePadding().heightIn(max = 760.dp), shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp), color = Color.White) {
@@ -90,6 +91,16 @@ import java.time.format.ResolverStyle
                 }
                 Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     if (seed?.reason?.isNotBlank() == true) Text(seed.reason, color = Amber, style = MaterialTheme.typography.bodyMedium)
+                    val usableTemplates = templates.filter { it.category in categories && it.category != Category.UNCATEGORIZED }
+                    if (usableTemplates.isNotEmpty()) {
+                        Text("快捷场景", style = MaterialTheme.typography.labelLarge, color = Pine)
+                        TemplateChips(usableTemplates) { template ->
+                            category = template.category
+                            if (merchant.isBlank()) merchant = template.merchant
+                            if (note.isBlank()) note = template.note
+                            appliedTemplateId = template.id
+                        }
+                    }
                     if (seed != null && seed.currency != "CNY") {
                         Text("原币种：${seed.currency}。暂不提供汇率换算，请核对实际人民币支出后填写。", color = Amber)
                         Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(yuanConfirmed, { yuanConfirmed = it }); Text("金额已核对为人民币", style = MaterialTheme.typography.bodySmall) }
@@ -99,7 +110,7 @@ import java.time.format.ResolverStyle
                         ChoiceField("交易类型", kind, Kind.entries.filter { it != Kind.UNKNOWN }, { it.label }, { kind = it }, Modifier.weight(1f))
                         ChoiceField("支付渠道", channel, Channel.entries, { it.label }, { channel = it }, Modifier.weight(1f))
                     }
-                    OutlinedTextField(merchant, { merchant = it }, label = { Text("商家 / 收款方") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(merchant, { merchant = it }, label = { Text("商家 / 收款方（选填）") }, supportingText = { Text("可以留空，先把消费分好类。") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     ChoiceField("消费分类", category, (categories + category).distinct(), { it.label }, { category = it })
                     TextButton(onClick = { addCategory = true }, enabled = categories.count { it.isCustom } < 100) { Text("新增自定义分类") }
                     if (addCategory) CategoryNameFields(null, categories + category, onCancel = { addCategory = false }, onSave = { name -> category = Category.custom(name); addCategory = false })
@@ -207,7 +218,7 @@ import java.time.format.ResolverStyle
         }
     }
     deleting?.let { category -> AlertDialog(onDismissRequest = { deleting = null }, title = { Text("删除“${category.label}”？") },
-        text = { Text("${counts[category] ?: 0}笔相关账单会改为“未分类”，${ruleCounts[category] ?: 0}条商家规则会被移除。账单和金额会保留。" + if (!category.isCustom) "\n\n之后可用“恢复内置”重新添加此分类，原账单不会自动改回。" else "") },
+        text = { Text("${counts[category] ?: 0}笔相关账单会改为“未分类”，${ruleCounts[category] ?: 0}条商家规则会被移除。账单和金额会保留，使用此分类的场景模板需重新选分类。" + if (!category.isCustom) "\n\n之后可用“恢复内置”重新添加此分类，原账单不会自动改回。" else "") },
         confirmButton = { TextButton(onClick = { onDelete(category); deleting = null }, enabled = !busy) { Text("删除分类") } },
         dismissButton = { TextButton(onClick = { deleting = null }) { Text("取消") } }) }
 }

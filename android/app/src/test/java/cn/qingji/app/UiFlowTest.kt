@@ -19,6 +19,7 @@ import androidx.lifecycle.ViewModelProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.junit.Rule
+import org.junit.After
 import org.junit.Test
 import org.junit.Assert.assertTrue
 import org.junit.runner.RunWith
@@ -32,7 +33,14 @@ import org.robolectric.annotation.GraphicsMode
 @LooperMode(LooperMode.Mode.PAUSED)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class UiFlowTest {
-    @get:Rule val compose = createAndroidComposeRule<MainActivity>()
+    @get:Rule(order = 0) val mainLooper = MainLooperRule()
+    @get:Rule(order = 1) val compose = createAndroidComposeRule<MainActivity>()
+    @After fun closeActivityDatabase() {
+        val repo = (compose.activity.application as QingJiApplication).repository
+        val database = org.robolectric.util.ReflectionHelpers.getField<LedgerDatabase>(repo, "db")
+        compose.activityRule.scenario.close()
+        database.close()
+    }
 
     private fun screenshot(name: String) {
         val directory = System.getProperty("qingji.screenshots") ?: return
@@ -49,7 +57,7 @@ class UiFlowTest {
         screenshot("01-home")
         compose.onNodeWithText("记一笔", useUnmergedTree = true).performClick()
         compose.onNodeWithText("金额（元）").performTextInput("28.50")
-        compose.onNodeWithText("商家 / 收款方").performTextInput("测试面馆")
+        compose.onNodeWithText("商家 / 收款方（选填）").performTextInput("测试面馆")
         compose.onNodeWithText("新增自定义分类").performClick()
         compose.onNodeWithText("分类名称").performScrollTo().performTextInput("学习")
         compose.onNodeWithText("保存分类").performScrollTo().performClick()
@@ -121,7 +129,8 @@ class UiFlowTest {
         assertTrue(!PaymentPageSettings.enabled(compose.activity))
         runBlocking(Dispatchers.IO) { repeat(8) { repo.moveCategory(Category.custom("学习"), -1) } }
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("管理消费分类"))
-        compose.onNodeWithText("管理消费分类").performClick()
+        // Trigger the same accessibility action when the paused snackbar covers this row.
+        compose.onNodeWithText("管理消费分类").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick) { it() }
         compose.onNodeWithText("学习").assertExists()
         compose.onNodeWithContentDescription("下移学习").performClick()
         compose.waitUntil(15000) { runBlocking(Dispatchers.IO) { repo.snapshot().categoryPreferences.single { it.category.label == "学习" }.position == 1 } }
@@ -160,8 +169,6 @@ class UiFlowTest {
         compose.onNodeWithText("查看新版").performClick()
         compose.onNodeWithText("清记 1.5.0").assertIsDisplayed()
         compose.onNodeWithText("稍后再说").performClick()
-        compose.runOnUiThread { compose.activity.viewModelStore.clear() }
-        compose.waitForIdle()
     }
 }
 

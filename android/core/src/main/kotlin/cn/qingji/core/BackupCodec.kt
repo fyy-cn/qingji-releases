@@ -18,12 +18,15 @@ object BackupCodec {
         return try { SecretKeySpec(SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(spec).encoded, "AES") } finally { spec.clearPassword() }
     }
     fun validate(data: BackupData) {
-        require(data.version in 1..4) { "备份版本不受支持" }
+        require(data.version in 1..5) { "备份版本不受支持" }
         require(data.entries.size <= 100_000 && data.entries.map { it.id }.toSet().size == data.entries.size) { "账单数量或主键无效" }
         require(data.entries.all { it.amountFen in 0..100_000_000_000_000L && it.occurredAt in 0..4_102_444_800_000L && it.merchant.length <= 500 && it.note.length <= 4000 && it.raw.length <= 4000 && (it.status != Status.CONFIRMED || (it.amountFen > 0 && it.kind != Kind.UNKNOWN)) }) { "备份包含无效交易" }
         require(data.rules.size <= 20_000 && data.imports.size <= 20_000) { "备份数据超出限制" }
         require(data.customCategories.all { it.isCustom }) { "自定义分类无效" }
-        val categories = (data.customCategories + data.entries.map { it.category } + data.rules.map { it.category }).filter { it.isCustom }.distinct()
+        require(data.quickTemplates.size <= 100 && data.quickTemplates.map { it.id }.distinct().size == data.quickTemplates.size && data.quickTemplates.map { it.label.lowercase() }.distinct().size == data.quickTemplates.size) { "模板过多或名称、编号重复" }
+        data.quickTemplates.forEach(QuickClassification::validate)
+        require(data.version >= 5 || data.quickTemplates.isEmpty()) { "快捷模板需要新版备份格式" }
+        val categories = (data.customCategories + data.entries.map { it.category } + data.rules.map { it.category } + data.quickTemplates.map { it.category }).filter { it.isCustom }.distinct()
         require(categories.size <= 100 && categories.map { it.label.lowercase() }.distinct().size == categories.size) { "自定义分类过多或名称重复" }
         require(data.categoryPreferences.size <= 108 && data.categoryPreferences.map { it.category }.distinct().size == data.categoryPreferences.size) { "分类排序重复或超出限制" }
         require(data.categoryPreferences.all { it.position in 0..1_000_000 && (!it.category.isCustom || (it.category in categories && !it.hidden)) && (it.category != Category.UNCATEGORIZED || !it.hidden) }) { "分类排序或删除状态无效" }

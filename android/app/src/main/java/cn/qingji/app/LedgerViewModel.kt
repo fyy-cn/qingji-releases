@@ -16,6 +16,7 @@ class LedgerViewModel(application: Application) : AndroidViewModel(application) 
     val rules = repo.rules.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val imports = repo.imports.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val categories = repo.categories.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), Category.entries)
+    val templates = repo.templates.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val busy = MutableStateFlow(false)
     val preview = MutableStateFlow<ImportPreview?>(null)
     val restoredData = MutableStateFlow<BackupData?>(null)
@@ -34,7 +35,13 @@ class LedgerViewModel(application: Application) : AndroidViewModel(application) 
             } finally { busy.value = false }
         }
     }
-    fun save(entry: Entry, makeRule: Boolean) = task("账单已保存") { repo.save(entry, makeRule) }
+    fun save(entry: Entry, makeRule: Boolean, templateId: String? = null) = task("账单已保存") { repo.save(entry, makeRule, templateId) }
+    fun classify(ids: Set<String>, category: Category) = task("已归类；待确认账单仍需核实") { repo.classify(ids, category = category) }
+    fun applyTemplate(ids: Set<String>, templateId: String) = task("已套用模板；待确认账单仍需核实") { repo.classify(ids, templateId = templateId) }
+    fun saveTemplate(template: QuickTemplate, onSaved: () -> Unit) = task("模板已保存") { repo.saveTemplate(template); withContext(Dispatchers.Main) { onSaved() } }
+    fun deleteTemplate(id: String) = task("模板已删除，账单保持原样") { repo.deleteTemplate(id) }
+    fun moveTemplate(id: String, direction: Int) = task { repo.moveTemplate(id, direction) }
+    fun addStarterTemplates() = task("已添加可用的常用模板") { repo.addStarterTemplates() }
     fun ignore(entry: Entry) = task("已忽略；再次收到同一交易也不会自动入账") { repo.ignore(entry.id) }
     fun merge(pendingId: String, targetId: String) = task("已合并交易来源") { repo.merge(pendingId, targetId) }
     fun removeRule(rule: MerchantRule) = task("规则已删除") { repo.removeRule(rule.merchant) }

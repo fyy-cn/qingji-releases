@@ -7,6 +7,7 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -59,6 +60,7 @@ fun diagnostics(context: Context): Diagnostics {
     val rules by vm.rules.collectAsStateWithLifecycle()
     val imports by vm.imports.collectAsStateWithLifecycle()
     val categories by vm.categories.collectAsStateWithLifecycle()
+    val templates by vm.templates.collectAsStateWithLifecycle()
     val busy by vm.busy.collectAsStateWithLifecycle()
     val preview by vm.preview.collectAsStateWithLifecycle()
     val restored by vm.restoredData.collectAsStateWithLifecycle()
@@ -71,6 +73,8 @@ fun diagnostics(context: Context): Diagnostics {
     var showPageDisclosure by remember { mutableStateOf(false) }
     var showCampusPicker by remember { mutableStateOf(false) }
     var showCategories by remember { mutableStateOf(false) }
+    var showTemplates by remember { mutableStateOf(false) }
+    var showQuickClassification by rememberSaveable { mutableStateOf(false) }
     var backupMode by remember { mutableStateOf<String?>(null) }
     var restoreUri by remember { mutableStateOf<Uri?>(null) }
     var health by remember { mutableStateOf(diagnostics(context)) }
@@ -96,29 +100,34 @@ fun diagnostics(context: Context): Diagnostics {
     val csvLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri -> if (uri != null) vm.writeCsv(uri) else vm.cancelCsv() }
     val restoreLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) { restoreUri = uri; backupMode = "restore" } }
     fun importFile() { importLauncher.launch(arrayOf("*/*")) }
-    fun openFilter(next: EntryFilter) { filter = next; selected = 1 }
+    fun openFilter(next: EntryFilter) { filter = next; selected = 1; showQuickClassification = false }
+    fun quickClassify() { selected = 1; showQuickClassification = true }
     fun edit(entry: Entry?) { editing = entry; showEditor = true }
+    BackHandler(enabled = showQuickClassification && !showEditor && !showTemplates) { showQuickClassification = false; filter = null }
 
     Box(Modifier.fillMaxSize()) {
         Scaffold(containerColor = Cream, snackbarHost = { SnackbarHost(snackbar) },
             bottomBar = {
                 NavigationBar(containerColor = Cream, tonalElevation = 0.dp) {
                     listOf("首页" to Icons.Default.Home, "账单" to Icons.AutoMirrored.Filled.ReceiptLong, "分析" to Icons.Default.BarChart, "设置" to Icons.Default.Tune).forEachIndexed { index, (label, icon) ->
-                        NavigationBarItem(selected = selected == index, onClick = { selected = index; if (index == 1) filter = null },
+                        NavigationBarItem(selected = selected == index, onClick = { selected = index; showQuickClassification = false; if (index == 1) filter = null },
                             icon = { Icon(icon, contentDescription = label) }, label = { Text(label) },
                             colors = NavigationBarItemDefaults.colors(indicatorColor = Lime, selectedIconColor = Pine, selectedTextColor = Pine))
                     }
                 }
             },
             floatingActionButton = {
-                if (selected <= 1) ExtendedFloatingActionButton(onClick = { edit(null) }, icon = { Icon(Icons.Default.Add, "补记") }, text = { Text("记一笔") }, containerColor = Pine, contentColor = androidx.compose.ui.graphics.Color.White)
+                if (selected <= 1 && !showQuickClassification) ExtendedFloatingActionButton(onClick = { edit(null) }, icon = { Icon(Icons.Default.Add, "补记") }, text = { Text("记一笔") }, containerColor = Pine, contentColor = androidx.compose.ui.graphics.Color.White)
             }
         ) { padding ->
             Box(Modifier.padding(padding).fillMaxSize()) {
-                when (selected) {
+                if (showQuickClassification) QuickClassificationScreen(entries, categories, templates, busy,
+                    onDismiss = { showQuickClassification = false; filter = null }, onEdit = { edit(it) }, onCategory = vm::classify, onTemplate = vm::applyTemplate,
+                    onManageTemplates = { showTemplates = true }, onViewPending = { openFilter(EntryFilter("待确认账单", pendingOnly = true)) })
+                else when (selected) {
                     0 -> HomeScreen(entries, today, health, imports.maxByOrNull { it.importedAt }, onAuthorize = { showDisclosure = true }, onImport = ::importFile,
-                        onPending = { openFilter(EntryFilter("待确认账单", pendingOnly = true)) }, onEntry = { edit(it) }, onFilter = ::openFilter, onAnalysis = { selected = 2 })
-                    1 -> LedgerScreen(entries, filter, onClear = { filter = null }, onEntry = { edit(it) }, onExport = { records -> vm.prepareCsv(records) { csvLauncher.launch("清记账单-$today.csv") } })
+                        onPending = { openFilter(EntryFilter("待确认账单", pendingOnly = true)) }, onEntry = { edit(it) }, onFilter = ::openFilter, onAnalysis = { selected = 2 }, onQuickClassify = ::quickClassify)
+                    1 -> LedgerScreen(entries, filter, onClear = { filter = null }, onEntry = { edit(it) }, onExport = { records -> vm.prepareCsv(records) { csvLauncher.launch("清记账单-$today.csv") } }, onQuickClassify = ::quickClassify)
                     2 -> AnalysisScreen(entries, today, onFilter = ::openFilter)
                     3 -> SettingsScreen(health, rules, imports, onAuthorize = { showDisclosure = true }, onImport = ::importFile,
                         onBackup = { backupMode = "backup" }, onRestore = { restoreLauncher.launch(arrayOf("*/*")) }, onRemoveRule = vm::removeRule,
@@ -126,6 +135,7 @@ fun diagnostics(context: Context): Diagnostics {
                         onReconnect = { vm.messages.tryEmit(NotificationMonitor.ensureConnected(context, manual = true)); health = diagnostics(context) },
                         updateState = updateState, onCheckUpdate = { updater.check() }, onBackgroundUpdate = updater::background, onOpenUpdate = updater::openRelease,
                         categoryCount = categories.size, onManageCategories = { showCategories = true }, onExportAll = { vm.prepareCsv { csvLauncher.launch("清记全部账单-$today.csv") } },
+                        templateCount = templates.size, onManageTemplates = { showTemplates = true }, onQuickClassify = ::quickClassify,
                         onSelectCampus = { showCampusPicker = true }, onRemoveCampus = { CampusSources.select(context, null); health = diagnostics(context); vm.messages.tryEmit("已停止采集校园应用，历史账单保留") },
                         onCopyNotificationDiagnostic = {
                             context.getSystemService(android.content.ClipboardManager::class.java).setPrimaryClip(android.content.ClipData.newPlainText("清记通知诊断", NotificationMonitor.diagnostic(context)))
@@ -155,8 +165,9 @@ fun diagnostics(context: Context): Diagnostics {
         showPageDisclosure = false; PaymentPageSettings.setEnabled(context, true); health = diagnostics(context)
         runCatching { PaymentPageSettings.openSettings(context) }.onFailure { vm.messages.tryEmit("请在系统设置中搜索“无障碍”，开启清记的支付页面识别") }
     })
-    if (showEditor) EntryEditor(editing, entries, onDismiss = { showEditor = false }, onSave = { entry, rule -> vm.save(entry, rule); showEditor = false },
-        onIgnore = { vm.ignore(it); showEditor = false }, onMerge = { id, target -> vm.merge(id, target); showEditor = false }, categories = categories)
+    if (showEditor) EntryEditor(editing, entries, onDismiss = { showEditor = false }, onSave = { entry, rule, templateId -> vm.save(entry, rule, templateId); showEditor = false },
+        onIgnore = { vm.ignore(it); showEditor = false }, onMerge = { id, target -> vm.merge(id, target); showEditor = false }, categories = categories, templates = templates)
+    if (showTemplates) TemplateManagerDialog(templates, categories, busy, onDismiss = { showTemplates = false }, onSave = vm::saveTemplate, onDelete = vm::deleteTemplate, onMove = vm::moveTemplate, onStarters = vm::addStarterTemplates)
     if (showCategories) CategoryManagerDialog(categories, entries, rules, busy, onDismiss = { showCategories = false }, onAdd = vm::addCategory, onRename = vm::renameCategory, onDelete = vm::deleteCategory, onMove = vm::moveCategory, onRestoreBuiltIns = vm::restoreBuiltInCategories)
     preview?.let { ImportDialog(it, onDismiss = { if (!busy) vm.preview.value = null }, onCommit = vm::commit, busy = busy) }
     if (showDisclosure) AlertDialog(onDismissRequest = { showDisclosure = false }, title = { Text("开启支付通知记账") },

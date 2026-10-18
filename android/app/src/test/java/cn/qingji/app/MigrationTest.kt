@@ -31,11 +31,12 @@ class MigrationTest {
             db.execSQL("INSERT INTO imports VALUES (?, ?)", arrayOf("digest", ledgerJson.encodeToString(ImportReceipt("digest", "旧账单.csv", 1000))))
             db.version = 1
         }
-        val database = Room.databaseBuilder(context, LedgerDatabase::class.java, name).addMigrations(LedgerDatabase.MIGRATION_1_2, LedgerDatabase.MIGRATION_2_3).build()
+        val database = Room.databaseBuilder(context, LedgerDatabase::class.java, name).addMigrations(LedgerDatabase.MIGRATION_1_2, LedgerDatabase.MIGRATION_2_3, LedgerDatabase.MIGRATION_3_4).build()
         try {
             val repo = LedgerRepository(database)
             val data = repo.snapshot()
             assertEquals(entry, data.entries.single()); assertEquals(Category.FOOD, data.rules.single().category); assertEquals("旧账单.csv", data.imports.single().name)
+            assertEquals(6, data.quickTemplates.size)
             repo.addCategory("学习")
             assertEquals("学习", repo.snapshot().customCategories.single().label)
         } finally { database.close(); context.deleteDatabase(name) }
@@ -55,7 +56,7 @@ class MigrationTest {
             db.execSQL("INSERT INTO entries VALUES (?, ?, ?)", arrayOf<Any>(entry.id, entry.occurredAt, ledgerJson.encodeToString(entry)))
             db.version = 2
         }
-        val database = Room.databaseBuilder(context, LedgerDatabase::class.java, name).addMigrations(LedgerDatabase.MIGRATION_2_3).build()
+        val database = Room.databaseBuilder(context, LedgerDatabase::class.java, name).addMigrations(LedgerDatabase.MIGRATION_2_3, LedgerDatabase.MIGRATION_3_4).build()
         try {
             val repo = LedgerRepository(database)
             assertEquals(entry, repo.snapshot().entries.single())
@@ -65,6 +66,30 @@ class MigrationTest {
             assertEquals(entry, data.entries.single())
             assertTrue(data.categoryPreferences.any { it.category == Category.FOOD && it.hidden })
             assertEquals(7, data.categoryPreferences.single { it.category == Category.custom("学习") }.position)
+        } finally { database.close(); context.deleteDatabase(name) }
+    }
+    @Test fun databaseThreeKeepsCampusBillsAndHiddenCategoriesWhileAddingOnlyUsableStarters() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "migration-v3-${System.nanoTime()}.db"
+        val path = context.getDatabasePath(name).apply { parentFile!!.mkdirs() }
+        val entry = Entry(id = "v3-campus", amountFen = 1250, occurredAt = 1_790_000_000_000, merchant = "未知商家", channel = Channel.CAMPUS, status = Status.PENDING)
+        SQLiteDatabase.openOrCreateDatabase(path, null).use { db ->
+            db.execSQL("CREATE TABLE entries (id TEXT NOT NULL PRIMARY KEY, occurredAt INTEGER NOT NULL, payload TEXT NOT NULL)")
+            db.execSQL("CREATE INDEX index_entries_occurredAt ON entries(occurredAt)")
+            db.execSQL("CREATE TABLE merchant_rules (merchant TEXT NOT NULL PRIMARY KEY, payload TEXT NOT NULL)")
+            db.execSQL("CREATE TABLE imports (digest TEXT NOT NULL PRIMARY KEY, payload TEXT NOT NULL)")
+            db.execSQL("CREATE TABLE custom_categories (name TEXT NOT NULL PRIMARY KEY)")
+            db.execSQL("CREATE TABLE category_preferences (categoryName TEXT NOT NULL PRIMARY KEY, position INTEGER NOT NULL, hidden INTEGER NOT NULL)")
+            db.execSQL("INSERT INTO category_preferences VALUES ('FOOD', 1000000, 1)")
+            db.execSQL("INSERT INTO entries VALUES (?, ?, ?)", arrayOf<Any>(entry.id, entry.occurredAt, ledgerJson.encodeToString(entry)))
+            db.version = 3
+        }
+        val database = Room.databaseBuilder(context, LedgerDatabase::class.java, name).addMigrations(LedgerDatabase.MIGRATION_3_4).build()
+        try {
+            val data = LedgerRepository(database).snapshot()
+            assertEquals(entry, data.entries.single())
+            assertEquals(setOf("超市", "交通"), data.quickTemplates.map { it.label }.toSet())
+            assertTrue(data.categoryPreferences.single().hidden)
         } finally { database.close(); context.deleteDatabase(name) }
     }
 }

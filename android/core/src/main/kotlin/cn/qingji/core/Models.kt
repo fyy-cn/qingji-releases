@@ -93,13 +93,14 @@ object CategoryLayout {
 }
 
 @Serializable data class BackupData(
-    val version: Int = 4,
+    val version: Int = 5,
     val entries: List<Entry>,
     val rules: List<MerchantRule>,
     val imports: List<ImportReceipt>,
     val exportedAt: Long = System.currentTimeMillis(),
     val customCategories: List<Category> = emptyList(),
-    val categoryPreferences: List<CategoryPreference> = emptyList()
+    val categoryPreferences: List<CategoryPreference> = emptyList(),
+    val quickTemplates: List<QuickTemplate> = emptyList()
 )
 
 fun sha256(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }

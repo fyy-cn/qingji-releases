@@ -53,7 +53,7 @@ class CaptureRegressionTests {
     @Test fun backupRoundTripPreservesCampusChannelAndStillReadsVersionThree() {
         val entry = Entry(amountFen = 1250, occurredAt = now, merchant = "测试食堂", channel = Channel.CAMPUS, status = Status.PENDING)
         val data = BackupData(entries = listOf(entry), rules = emptyList(), imports = emptyList())
-        assertEquals(4, data.version)
+        assertEquals(5, data.version)
         assertEquals(data, BackupCodec.decrypt(BackupCodec.encrypt(data, "password123".toCharArray()), "password123".toCharArray()))
         val legacy = data.copy(version = 3, entries = listOf(entry.copy(channel = Channel.WECHAT)))
         assertEquals(legacy, BackupCodec.decrypt(BackupCodec.encrypt(legacy, "password123".toCharArray()), "password123".toCharArray()))

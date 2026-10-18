@@ -23,8 +23,8 @@ android {
         applicationId = "cn.qingji.app"
         minSdk = 29
         targetSdk = 35
-        versionCode = 6
-        versionName = "1.5.0"
+        versionCode = 7
+        versionName = "1.6.0"
         buildConfigField("String", "UPDATE_URL", quoted(updateFeed))
         buildConfigField("String", "DOWNLOAD_PAGE", quoted(downloadPage))
         buildConfigField("String", "GITHUB_REPOSITORY", quoted(githubRepository))
@@ -78,6 +78,9 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
 tasks.withType<Test>().configureEach {
+    // Native Robolectric graphics and Room collectors need a fresh runtime for each test class.
+    forkEvery = 1
+    maxParallelForks = 2
     systemProperty("robolectric.dependency.repo.url", "https://repo.maven.apache.org/maven2")
     providers.gradleProperty("qingjiScreenshots").orNull?.let {
         systemProperty("qingji.screenshots", it)

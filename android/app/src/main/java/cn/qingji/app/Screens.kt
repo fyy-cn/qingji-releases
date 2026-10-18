@@ -29,11 +29,12 @@ import java.time.format.DateTimeFormatter
 import kotlin.math.abs
 
 @Composable fun HomeScreen(entries: List<Entry>, today: LocalDate, health: Diagnostics, lastImport: ImportReceipt?,
-    onAuthorize: () -> Unit, onImport: () -> Unit, onPending: () -> Unit, onEntry: (Entry) -> Unit, onFilter: (EntryFilter) -> Unit, onAnalysis: () -> Unit) {
+    onAuthorize: () -> Unit, onImport: () -> Unit, onPending: () -> Unit, onEntry: (Entry) -> Unit, onFilter: (EntryFilter) -> Unit, onAnalysis: () -> Unit, onQuickClassify: () -> Unit) {
     val month = remember(entries, today) { Reports.build(entries, Period.MONTH, today, today) }
     val week = Reports.total(entries, Reports.fullRange(Period.WEEK, today))
     val day = Reports.total(entries, Reports.fullRange(Period.DAY, today))
     val pending = entries.count { it.status == Status.PENDING }
+    val unclassified = entries.count(QuickClassification::needsCategory)
     val recent = entries.filter { it.status == Status.CONFIRMED }.sortedByDescending { it.occurredAt }.take(5)
     val last7 = (6L downTo 0L).map { days -> val date = today.minusDays(days); Bucket("${date.dayOfMonth}日", Reports.total(entries, Reports.fullRange(Period.DAY, date)).net) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp, 16.dp, 20.dp, 100.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
@@ -74,6 +75,12 @@ import kotlin.math.abs
                 Text("待确认记录暂不计入消费，点这里补充信息或处理疑似重复。", color = Amber, style = MaterialTheme.typography.bodySmall)
             }
         }
+        if (unclassified > 0) item {
+            Panel(color = Color(0xFFE5EFE6), modifier = Modifier.clickable(onClick = onQuickClassify)) {
+                SectionTitle("$unclassified 笔账单等你归类", "快捷归类", onQuickClassify)
+                Text("点分类或套用常用场景，商家可以不填。", color = Pine, style = MaterialTheme.typography.bodySmall)
+            }
+        }
         item {
             Panel {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -99,7 +106,7 @@ import kotlin.math.abs
     }
 }
 
-@Composable fun LedgerScreen(entries: List<Entry>, filter: EntryFilter?, onClear: () -> Unit, onEntry: (Entry) -> Unit, onExport: (List<Entry>) -> Unit) {
+@Composable fun LedgerScreen(entries: List<Entry>, filter: EntryFilter?, onClear: () -> Unit, onEntry: (Entry) -> Unit, onExport: (List<Entry>) -> Unit, onQuickClassify: () -> Unit) {
     var query by rememberSaveable { mutableStateOf("") }
     var state by rememberSaveable { mutableStateOf("有效记录") }
     var channel by rememberSaveable { mutableStateOf("全部渠道") }
@@ -118,6 +125,7 @@ import kotlin.math.abs
             TextButton(onClick = { onExport(selected) }, enabled = selected.isNotEmpty()) { Text("导出CSV") }
         } }
         item { OutlinedTextField(query, { query = it }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), singleLine = true, placeholder = { Text("搜索商家、分类、备注或交易号") }, leadingIcon = { Icon(Icons.Default.Search, "搜索") }) }
+        item { OutlinedButton(onClick = onQuickClassify) { Text("快捷归类 · ${entries.count(QuickClassification::needsCategory)} 笔待归类") } }
         if (filter != null) item {
             Panel(color = Color(0xFFE5EFE6)) {
                 Text(filter.title, style = MaterialTheme.typography.titleMedium)
@@ -229,7 +237,8 @@ import kotlin.math.abs
     updateState: UpdateUiState, onCheckUpdate: () -> Unit, onBackgroundUpdate: (Boolean) -> Unit, onOpenUpdate: () -> Unit,
     categoryCount: Int, onManageCategories: () -> Unit, onExportAll: () -> Unit,
     onEnablePage: () -> Unit, onDisablePage: () -> Unit, onViewPending: () -> Unit, onCopyPageDiagnostic: () -> Unit,
-    onSelectCampus: () -> Unit, onRemoveCampus: () -> Unit, onCopyNotificationDiagnostic: () -> Unit) {
+    onSelectCampus: () -> Unit, onRemoveCampus: () -> Unit, onCopyNotificationDiagnostic: () -> Unit,
+    templateCount: Int, onManageTemplates: () -> Unit, onQuickClassify: () -> Unit) {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp, 16.dp, 20.dp, 28.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
         item { Text("设置", style = MaterialTheme.typography.headlineLarge) }
         item { Panel(color = Color(0xFFE5EFE6)) {
@@ -237,6 +246,12 @@ import kotlin.math.abs
             Text("无需登录 · 本地识别 · 联网仅用于检查和下载更新", color = Pine, style = MaterialTheme.typography.bodySmall)
         } }
         item { NotificationCapturePanel(health, onAuthorize, onReconnect, onCopyNotificationDiagnostic) }
+        item { Panel {
+            SectionTitle("快捷归类")
+            Text("$templateCount 个场景模板 · 商家选填 · 支持批量分类", color = Muted, style = MaterialTheme.typography.bodySmall)
+            Button(onClick = onQuickClassify) { Text("整理待归类账单") }
+            OutlinedButton(onClick = onManageTemplates) { Text("管理场景模板") }
+        } }
         item { CampusSourcePanel(health.campus, onSelectCampus, onRemoveCampus) }
         item { PaymentPagePanel(health.page, onEnablePage, onDisablePage, onViewPending, onCopyPageDiagnostic) }
         item { UpdatePanel(updateState, onCheckUpdate, onBackgroundUpdate, onOpenUpdate) }
