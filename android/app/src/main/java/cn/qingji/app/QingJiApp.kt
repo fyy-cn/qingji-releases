@@ -6,7 +6,6 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
-import android.service.notification.NotificationListenerService
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -43,13 +42,13 @@ data class EntryFilter(val title: String, val start: Long? = null, val end: Long
             range.start.atStartOfDay(ledgerZone).toInstant().toEpochMilli(), range.endExclusive.atStartOfDay(ledgerZone).toInstant().toEpochMilli(), category, merchant)
     }
 }
-data class Diagnostics(val access: Boolean = false, val connectedAt: Long = 0, val lastAt: Long = 0, val lastAction: String = "", val channel: String = "", val error: String = "", val wechat: String = "未安装", val alipay: String = "未安装", val page: PaymentPageHealth = PaymentPageHealth())
+data class Diagnostics(val access: Boolean = false, val connectedAt: Long = 0, val lastAt: Long = 0, val lastAction: String = "", val channel: String = "", val error: String = "", val wechat: String = "未安装", val alipay: String = "未安装", val page: PaymentPageHealth = PaymentPageHealth(), val notification: NotificationHealth = NotificationHealth(), val campus: CampusApp? = null)
 fun diagnostics(context: Context): Diagnostics {
     val prefs = context.getSharedPreferences("diagnostics", Context.MODE_PRIVATE)
     fun version(pkg: String) = runCatching { context.packageManager.getPackageInfo(pkg, 0).versionName ?: "未知版本" }.getOrDefault("未安装")
     return Diagnostics(context.getSystemService(NotificationManager::class.java).isNotificationListenerAccessGranted(ComponentName(context, PaymentNotificationService::class.java)),
         prefs.getLong("connectedAt", 0), prefs.getLong("lastCandidateAt", 0), prefs.getString("lastAction", "").orEmpty(), prefs.getString("lastChannel", "").orEmpty(), prefs.getString("lastError", "").orEmpty(),
-        version("com.tencent.mm"), version("com.eg.android.AlipayGphone"), PaymentPageSettings.health(context))
+        version("com.tencent.mm"), version("com.eg.android.AlipayGphone"), PaymentPageSettings.health(context), NotificationMonitor.health(context), CampusSources.selected(context))
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -70,6 +69,7 @@ fun diagnostics(context: Context): Diagnostics {
     var showEditor by remember { mutableStateOf(false) }
     var showDisclosure by remember { mutableStateOf(false) }
     var showPageDisclosure by remember { mutableStateOf(false) }
+    var showCampusPicker by remember { mutableStateOf(false) }
     var showCategories by remember { mutableStateOf(false) }
     var backupMode by remember { mutableStateOf<String?>(null) }
     var restoreUri by remember { mutableStateOf<Uri?>(null) }
@@ -77,16 +77,18 @@ fun diagnostics(context: Context): Diagnostics {
     var today by remember { mutableStateOf(LocalDate.now(ledgerZone)) }
     val snackbar = remember { SnackbarHostState() }
     DisposableEffect(owner) {
-        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) { health = diagnostics(context); today = LocalDate.now(ledgerZone); updater.resume() } }
+        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) { NotificationMonitor.ensureConnected(context); health = diagnostics(context); today = LocalDate.now(ledgerZone); updater.resume() } }
         owner.lifecycle.addObserver(observer)
         onDispose { owner.lifecycle.removeObserver(observer) }
     }
     DisposableEffect(context) {
         val preferences = context.getSharedPreferences("diagnostics", Context.MODE_PRIVATE)
         val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> health = diagnostics(context) }
-        preferences.registerOnSharedPreferenceChangeListener(listener)
-        onDispose { preferences.unregisterOnSharedPreferenceChangeListener(listener) }
+        val sources = context.getSharedPreferences("capture_sources", Context.MODE_PRIVATE)
+        preferences.registerOnSharedPreferenceChangeListener(listener); sources.registerOnSharedPreferenceChangeListener(listener)
+        onDispose { preferences.unregisterOnSharedPreferenceChangeListener(listener); sources.unregisterOnSharedPreferenceChangeListener(listener) }
     }
+    LaunchedEffect(context) { NotificationMonitor.ensureConnected(context); health = diagnostics(context) }
     LaunchedEffect(vm) { vm.messages.collect { snackbar.showSnackbar(it) } }
     LaunchedEffect(updateRequest) { if (updateRequest > 0) updater.check(true) else updater.resume() }
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(vm::import) }
@@ -121,9 +123,14 @@ fun diagnostics(context: Context): Diagnostics {
                     3 -> SettingsScreen(health, rules, imports, onAuthorize = { showDisclosure = true }, onImport = ::importFile,
                         onBackup = { backupMode = "backup" }, onRestore = { restoreLauncher.launch(arrayOf("*/*")) }, onRemoveRule = vm::removeRule,
                         onAppSettings = { runCatching { context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:${context.packageName}".toUri())) }.onFailure { vm.messages.tryEmit("请长按清记图标打开应用信息") } },
-                        onReconnect = { NotificationListenerService.requestRebind(ComponentName(context, PaymentNotificationService::class.java)); health = diagnostics(context) },
+                        onReconnect = { vm.messages.tryEmit(NotificationMonitor.ensureConnected(context, manual = true)); health = diagnostics(context) },
                         updateState = updateState, onCheckUpdate = { updater.check() }, onBackgroundUpdate = updater::background, onOpenUpdate = updater::openRelease,
                         categoryCount = categories.size, onManageCategories = { showCategories = true }, onExportAll = { vm.prepareCsv { csvLauncher.launch("清记全部账单-$today.csv") } },
+                        onSelectCampus = { showCampusPicker = true }, onRemoveCampus = { CampusSources.select(context, null); health = diagnostics(context); vm.messages.tryEmit("已停止采集校园应用，历史账单保留") },
+                        onCopyNotificationDiagnostic = {
+                            context.getSystemService(android.content.ClipboardManager::class.java).setPrimaryClip(android.content.ClipData.newPlainText("清记通知诊断", NotificationMonitor.diagnostic(context)))
+                            vm.messages.tryEmit("通知诊断已复制，不包含原始通知或交易字段")
+                        },
                         onEnablePage = { showPageDisclosure = true }, onDisablePage = { PaymentPageSettings.setEnabled(context, false); health = diagnostics(context) },
                         onViewPending = { openFilter(EntryFilter("待确认账单", pendingOnly = true)) }, onCopyPageDiagnostic = {
                             context.getSystemService(android.content.ClipboardManager::class.java).setPrimaryClip(android.content.ClipData.newPlainText("清记页面识别诊断", PaymentPageSettings.diagnostic(context)))
@@ -138,6 +145,11 @@ fun diagnostics(context: Context): Diagnostics {
             }
         }
     }
+    if (showCampusPicker) CampusAppPicker(onDismiss = { showCampusPicker = false }, onSelect = { app ->
+        showCampusPicker = false
+        runCatching { CampusSources.select(context, app.packageName); NotificationMonitor.ensureConnected(context, manual = true); health = diagnostics(context) }
+            .onSuccess { vm.messages.tryEmit("已选择${app.label}，校园交易先进入待确认") }.onFailure { vm.messages.tryEmit(it.message ?: "选择失败，请重试") }
+    })
     AppUpdateDialog(updateState, updater::dismiss, updater::download, updater::cancelDownload, updater::install)
     if (showPageDisclosure) PaymentPageDisclosure(onDismiss = { showPageDisclosure = false }, onConfirm = {
         showPageDisclosure = false; PaymentPageSettings.setEnabled(context, true); health = diagnostics(context)
@@ -148,7 +160,7 @@ fun diagnostics(context: Context): Diagnostics {
     if (showCategories) CategoryManagerDialog(categories, entries, rules, busy, onDismiss = { showCategories = false }, onAdd = vm::addCategory, onRename = vm::renameCategory, onDelete = vm::deleteCategory, onMove = vm::moveCategory, onRestoreBuiltIns = vm::restoreBuiltInCategories)
     preview?.let { ImportDialog(it, onDismiss = { if (!busy) vm.preview.value = null }, onCommit = vm::commit, busy = busy) }
     if (showDisclosure) AlertDialog(onDismissRequest = { showDisclosure = false }, title = { Text("开启支付通知记账") },
-        text = { Text("系统通知使用权允许应用访问通知。清记只处理微信与支付宝的支付候选通知，数据保存在本机，不上传。\n\n识别不到或未收到的通知需要导入账单补齐。前往系统设置后，请开启“清记 · 支付通知记账”。") },
+        text = { Text("系统通知使用权允许应用访问通知。清记只处理微信、支付宝及你选择的校园应用的交易候选通知，数据保存在本机，不上传。\n\n识别不到或未收到的通知需要核对补齐。前往系统设置后，请开启“清记 · 支付通知记账”。") },
         confirmButton = { TextButton(onClick = {
             showDisclosure = false
             runCatching { context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }.onFailure { vm.messages.tryEmit("无法打开系统设置，请在设置中搜索“通知使用权”") }

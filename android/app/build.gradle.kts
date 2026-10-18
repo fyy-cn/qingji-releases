@@ -23,8 +23,8 @@ android {
         applicationId = "cn.qingji.app"
         minSdk = 29
         targetSdk = 35
-        versionCode = 5
-        versionName = "1.4.0"
+        versionCode = 6
+        versionName = "1.5.0"
         buildConfigField("String", "UPDATE_URL", quoted(updateFeed))
         buildConfigField("String", "DOWNLOAD_PAGE", quoted(downloadPage))
         buildConfigField("String", "GITHUB_REPOSITORY", quoted(githubRepository))

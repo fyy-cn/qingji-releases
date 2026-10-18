@@ -39,7 +39,7 @@ class UiFlowTest {
         compose.waitForIdle()
         val file = File(directory, "$name.png")
         file.parentFile?.mkdirs()
-        if (name in setOf("06-categories", "07-page-recognition-disclosure")) captureScreenRoboImage(file.absolutePath)
+        if (name in setOf("06-categories", "07-page-recognition-disclosure", "08-campus-picker")) captureScreenRoboImage(file.absolutePath)
         else compose.activity.window.decorView.captureRoboImage(file.absolutePath)
     }
 
@@ -94,6 +94,24 @@ class UiFlowTest {
         compose.onNodeWithText("你的账本，留在你的手机里。").assertIsDisplayed()
         compose.onNodeWithText("通知使用权：未授权").assertIsDisplayed()
         screenshot("04-settings")
+        val campusInfo = android.content.pm.ApplicationInfo().apply { packageName = "edu.example.campus"; enabled = true; nonLocalizedLabel = "交我办（测试）" }
+        val packageInfo = android.content.pm.PackageInfo().apply { packageName = campusInfo.packageName; applicationInfo = campusInfo }
+        val pm = Shadows.shadowOf(compose.activity.packageManager)
+        pm.installPackage(packageInfo)
+        val launcher = android.content.pm.ResolveInfo().apply { activityInfo = android.content.pm.ActivityInfo().apply { packageName = campusInfo.packageName; name = "edu.example.campus.MainActivity"; enabled = true; applicationInfo = campusInfo } }
+        pm.addResolveInfoForIntent(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), launcher)
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("选择交我办"))
+        compose.onNodeWithText("选择交我办").performClick()
+        compose.onNodeWithText("搜索应用名称").performTextInput("交我办")
+        compose.waitUntil(15000) { compose.onAllNodesWithText("交我办（测试）").fetchSemanticsNodes().isNotEmpty() }
+        screenshot("08-campus-picker")
+        compose.onNodeWithText("交我办（测试）").performClick()
+        compose.waitUntil(15000) { CampusSources.packageName(compose.activity) == campusInfo.packageName }
+        compose.onNodeWithText("已选择：交我办（测试）").assertExists()
+        screenshot("09-campus-settings")
+        // A paused Robolectric snackbar can cover the bottom row; invoke its accessibility action.
+        compose.onNodeWithText("停止采集校园应用").performScrollTo().performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick) { it() }
+        compose.waitUntil(15000) { CampusSources.packageName(compose.activity) == null }
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("开启页面识别"))
         compose.onNodeWithText("实验功能：关闭").assertExists()
         compose.onNodeWithText("开启页面识别").performClick()

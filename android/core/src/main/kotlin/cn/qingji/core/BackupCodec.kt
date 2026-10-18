@@ -18,7 +18,7 @@ object BackupCodec {
         return try { SecretKeySpec(SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(spec).encoded, "AES") } finally { spec.clearPassword() }
     }
     fun validate(data: BackupData) {
-        require(data.version in 1..3) { "备份版本不受支持" }
+        require(data.version in 1..4) { "备份版本不受支持" }
         require(data.entries.size <= 100_000 && data.entries.map { it.id }.toSet().size == data.entries.size) { "账单数量或主键无效" }
         require(data.entries.all { it.amountFen in 0..100_000_000_000_000L && it.occurredAt in 0..4_102_444_800_000L && it.merchant.length <= 500 && it.note.length <= 4000 && it.raw.length <= 4000 && (it.status != Status.CONFIRMED || (it.amountFen > 0 && it.kind != Kind.UNKNOWN)) }) { "备份包含无效交易" }
         require(data.rules.size <= 20_000 && data.imports.size <= 20_000) { "备份数据超出限制" }

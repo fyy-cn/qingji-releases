@@ -79,10 +79,10 @@ import kotlin.math.abs
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(if (health.access) Icons.Default.NotificationsActive else Icons.Default.NotificationsOff, null, tint = Pine)
                     Spacer(Modifier.width(10.dp))
-                    Text(if (health.access) "支付通知已授权" else "开启自动记账", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                    Text(if (health.access && health.notification.connected) "通知记账已连接" else if (health.access) "通知监听待连接" else "开启自动记账", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
                     TextButton(onClick = if (health.access) onImport else onAuthorize) { Text(if (health.access) "导入补齐" else "去开启") }
                 }
-                Text(if (health.access) "授权后记录可识别通知，仍需定期导入对账。" else "授权后识别微信和支付宝支付通知，也可先导入历史账单。", color = Muted, style = MaterialTheme.typography.bodySmall)
+                Text(if (health.access && !health.notification.connected) "正在请求系统恢复连接；可到设置重连、补读并查看通知诊断。" else if (health.access) "记录可识别通知，校园应用可在设置中选择，仍需定期核对账单。" else "授权后识别支付通知，校园应用可在设置中选择，也可先导入历史账单。", color = Muted, style = MaterialTheme.typography.bodySmall)
                 Text("最近导入：${lastImport?.let { displayTime(it.importedAt) } ?: "尚未导入"} · 统计仅含已确认账单", color = Muted, style = MaterialTheme.typography.labelSmall)
                 if (!health.access) OutlinedButton(onClick = onImport) { Text("导入历史账单") }
             }
@@ -228,22 +228,16 @@ import kotlin.math.abs
     onRemoveRule: (MerchantRule) -> Unit, onReconnect: () -> Unit, onAppSettings: () -> Unit,
     updateState: UpdateUiState, onCheckUpdate: () -> Unit, onBackgroundUpdate: (Boolean) -> Unit, onOpenUpdate: () -> Unit,
     categoryCount: Int, onManageCategories: () -> Unit, onExportAll: () -> Unit,
-    onEnablePage: () -> Unit, onDisablePage: () -> Unit, onViewPending: () -> Unit, onCopyPageDiagnostic: () -> Unit) {
+    onEnablePage: () -> Unit, onDisablePage: () -> Unit, onViewPending: () -> Unit, onCopyPageDiagnostic: () -> Unit,
+    onSelectCampus: () -> Unit, onRemoveCampus: () -> Unit, onCopyNotificationDiagnostic: () -> Unit) {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp, 16.dp, 20.dp, 28.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
         item { Text("设置", style = MaterialTheme.typography.headlineLarge) }
         item { Panel(color = Color(0xFFE5EFE6)) {
             Text("你的账本，留在你的手机里。", style = MaterialTheme.typography.titleMedium)
             Text("无需登录 · 本地识别 · 联网仅用于检查和下载更新", color = Pine, style = MaterialTheme.typography.bodySmall)
         } }
-        item { Panel {
-            SectionTitle("自动记账")
-            Text(if (health.access) "通知使用权：已授权" else "通知使用权：未授权", color = if (health.access) Pine else Amber)
-            Text("最近候选通知：${if (health.lastAt == 0L) "尚未收到" else displayTime(health.lastAt, "yyyy-MM-dd HH:mm:ss")}\n${health.channel} ${health.lastAction}", color = Muted, style = MaterialTheme.typography.bodySmall)
-            if (health.error.isNotBlank()) Text(health.error, color = Amber)
-            Button(onClick = onAuthorize) { Text(if (health.access) "管理通知授权" else "开启通知记账") }
-            if (health.access) TextButton(onClick = onReconnect) { Text("请求重新连接监听服务") }
-            Text("系统可能限制后台运行或隐藏通知内容。授权不代表账单完整，请定期导入核对。", color = Muted, style = MaterialTheme.typography.bodySmall)
-        } }
+        item { NotificationCapturePanel(health, onAuthorize, onReconnect, onCopyNotificationDiagnostic) }
+        item { CampusSourcePanel(health.campus, onSelectCampus, onRemoveCampus) }
         item { PaymentPagePanel(health.page, onEnablePage, onDisablePage, onViewPending, onCopyPageDiagnostic) }
         item { UpdatePanel(updateState, onCheckUpdate, onBackgroundUpdate, onOpenUpdate) }
         if (Build.MANUFACTURER.equals("Xiaomi", true) || Build.BRAND.equals("Redmi", true)) item { Panel {

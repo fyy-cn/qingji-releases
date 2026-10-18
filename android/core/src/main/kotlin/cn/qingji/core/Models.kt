@@ -13,7 +13,17 @@ import java.util.UUID
 
 val ledgerJson = Json { encodeDefaults = true; ignoreUnknownKeys = false }
 
-@Serializable enum class Channel(val label: String) { WECHAT("微信"), ALIPAY("支付宝"), MANUAL("其他 / 现金") }
+@Serializable enum class Channel(val label: String) { WECHAT("微信"), ALIPAY("支付宝"), MANUAL("其他 / 现金"), CAMPUS("校园 / 交我办") }
+
+object PaymentSources {
+    val builtIns = setOf("com.tencent.mm", "com.eg.android.AlipayGphone")
+    fun channel(packageName: String, campusPackage: String? = null): Channel? = when (packageName) {
+        "com.tencent.mm" -> Channel.WECHAT
+        "com.eg.android.AlipayGphone" -> Channel.ALIPAY
+        campusPackage?.takeIf { it.isNotBlank() && it !in builtIns } -> Channel.CAMPUS
+        else -> null
+    }
+}
 @Serializable enum class Kind(val label: String) { EXPENSE("支出"), REFUND("退款"), TRANSFER("转账 / 充值 / 还款"), INCOME("收入"), UNKNOWN("待识别") }
 @Serializable enum class Status(val label: String) { CONFIRMED("已确认"), PENDING("待确认"), IGNORED("已忽略") }
 @ConsistentCopyVisibility
@@ -83,7 +93,7 @@ object CategoryLayout {
 }
 
 @Serializable data class BackupData(
-    val version: Int = 3,
+    val version: Int = 4,
     val entries: List<Entry>,
     val rules: List<MerchantRule>,
     val imports: List<ImportReceipt>,

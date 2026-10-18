@@ -26,7 +26,16 @@ import kotlinx.coroutines.test.*
 class ProbePaymentPageService : PaymentPageService() {
     var page: AccessibilityNodeInfo? = null
     var rootReads = 0
+    fun connectForTest() { onServiceConnected() }
     override fun getRootInActiveWindow(): AccessibilityNodeInfo? { rootReads++; return page }
+}
+
+/** Simulates the service-info IPC only available after a real accessibility connection. */
+@org.robolectric.annotation.Implements(android.accessibilityservice.AccessibilityService::class)
+class ConnectedAccessibilityShadow : org.robolectric.shadows.ShadowAccessibilityService() {
+    private var info = android.accessibilityservice.AccessibilityServiceInfo()
+    @org.robolectric.annotation.Implementation fun getServiceInfo(): android.accessibilityservice.AccessibilityServiceInfo = info
+    @org.robolectric.annotation.Implementation fun setServiceInfo(value: android.accessibilityservice.AccessibilityServiceInfo) { info = value }
 }
 
 @RunWith(RobolectricTestRunner::class)
@@ -37,6 +46,7 @@ class PaymentPageServiceTest {
     @Before fun clear() {
         context.getSharedPreferences("payment_page", 0).edit().clear().commit()
         context.getSharedPreferences("diagnostics", 0).edit().clear().commit()
+        context.getSharedPreferences("capture_sources", 0).edit().clear().commit()
     }
     @After fun cleanup() { clear() }
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -53,7 +63,7 @@ class PaymentPageServiceTest {
                 listOf("商户名称", "测试咖啡店", "实付金额", "￥28.50").forEach { Shadows.shadowOf(root).addChild(node(it)) }
             }
             PaymentPageSettings.setEnabled(context, true)
-            service.onAccessibilityEvent(AccessibilityEvent.obtain().apply { eventType = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED; packageName = "com.tencent.mm"; className = "com.tencent.mm.plugin.wallet.pay.ui.WalletPayUI" })
+            service.onAccessibilityEvent(AccessibilityEvent.obtain().apply { eventType = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED; packageName = "com.tencent.mm"; className = "com.tencent.mm.plugin.webview.ui.tools.MMWebViewUI" })
             dispatcher.scheduler.advanceTimeBy(500); dispatcher.scheduler.runCurrent()
             var records = emptyList<Entry>()
             val deadline = System.nanoTime() + 5_000_000_000L
@@ -118,6 +128,28 @@ class PaymentPageServiceTest {
             assertFalse(xml.getAttributeBooleanValue(ns, "canPerformGestures", false))
             assertFalse(xml.getAttributeBooleanValue(ns, "canTakeScreenshot", false))
         }
+    }
+    @Suppress("DEPRECATION")
+    @Test fun invisibleWebViewContainerStillAllowsVisibleVirtualChildren() {
+        val root = AccessibilityNodeInfo.obtain().apply { packageName = "com.tencent.mm"; isVisibleToUser = false; text = "隐藏容器文本" }
+        Shadows.shadowOf(root).addChild(AccessibilityNodeInfo.obtain().apply { packageName = "com.tencent.mm"; isVisibleToUser = true; text = "支付成功" })
+        val service = Robolectric.buildService(ProbePaymentPageService::class.java).create().get()
+        try { service.page = root; assertEquals(listOf("支付成功"), service.readActivePage("com.tencent.mm")) }
+        finally { service.onDestroy() }
+    }
+    @Config(shadows = [ConnectedAccessibilityShadow::class])
+    @Test fun dynamicPackageScopeAddsOnlySelectedCampusAndCanRemoveIt() {
+        val service = Robolectric.buildService(ProbePaymentPageService::class.java).create().get()
+        val info = android.accessibilityservice.AccessibilityServiceInfo()
+        try {
+            service.serviceInfo = info
+            PaymentPageSettings.setEnabled(context, true); service.connectForTest()
+            context.getSharedPreferences("capture_sources", 0).edit().putString("campusPackage", "edu.example.campus").commit()
+            Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            assertEquals(PaymentSources.builtIns + "edu.example.campus", service.serviceInfo.packageNames.toSet())
+            CampusSources.select(context, null); Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            assertEquals(PaymentSources.builtIns, service.serviceInfo.packageNames.toSet())
+        } finally { service.onDestroy() }
     }
     @Test fun diagnosticContainsStatusButNeverReceiptOrRawPageData() {
         context.getSharedPreferences("diagnostics", 0).edit().putString("raw", "秘密商家28.50订单123456").putString("pageClass", "com.tencent.mm.plugin.wallet.TestUI").commit()
