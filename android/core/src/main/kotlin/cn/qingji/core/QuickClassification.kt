@@ -7,6 +7,7 @@ import java.util.UUID
     val id: String = UUID.randomUUID().toString(),
     val label: String,
     val category: Category,
+    // Retained for compatibility with existing local data and encrypted backups.
     val merchant: String = "",
     val note: String = "",
     val position: Int = 0,
@@ -36,12 +37,10 @@ object QuickClassification {
         require(needsCategory(entry)) { "账单状态或分类已变更，请刷新后重试" }
         require(category != Category.UNCATEGORIZED) { "请选择具体分类" }
         template?.let { validate(it); require(it.category == category) { "模板分类已变更" } }
-        val merchant = if (entry.merchant.isBlank() || entry.merchant == "未知商家") template?.merchant?.trim()?.takeIf { it.isNotBlank() } ?: entry.merchant else entry.merchant
         val note = if (entry.note.isBlank()) template?.note?.trim().orEmpty() else entry.note
-        return entry.copy(category = category, merchant = merchant, note = note,
+        return entry.copy(category = category, note = note,
             editedFields = entry.editedFields + buildSet {
                 add("category")
-                if (merchant != entry.merchant) add("merchant")
                 if (note != entry.note) add("note")
             })
     }

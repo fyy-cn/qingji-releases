@@ -52,7 +52,7 @@ import cn.qingji.core.*
             TextButton(onClick = onManageTemplates) { Text("管理模板") }
         }
         Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("待归类 ${records.size} 笔 · 商家可不填", color = Pine, style = MaterialTheme.typography.titleSmall)
+            Text("待归类 ${records.size} 笔 · 选择消费分类", color = Pine, style = MaterialTheme.typography.titleSmall)
             Text("点分类或套用模板即可归类。待确认记录只修改用途，核实后才计入消费。", color = Muted, style = MaterialTheme.typography.bodySmall)
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { items(listOf("全部渠道") + Channel.entries.map { it.label }) { label ->
                 FilterChip(selected = channel == label, onClick = { channel = label; selection = emptySet() }, label = { Text(label) })
@@ -82,7 +82,6 @@ import cn.qingji.core.*
                     }
                     TextButton(onClick = { onEdit(entry) }) { Text(if (entry.status == Status.PENDING) "去核实" else "详情") }
                 }
-                Text(entry.merchant.takeUnless { it == "未知商家" || it.isBlank() } ?: "未填写商家", style = MaterialTheme.typography.bodyMedium)
                 if (entry.note.isNotBlank()) Text(entry.note, maxLines = 2, overflow = TextOverflow.Ellipsis, color = Muted, style = MaterialTheme.typography.bodySmall)
                 if (entry.status == Status.PENDING) Text("待确认 · 本次归类不会自动确认交易", color = Amber, style = MaterialTheme.typography.labelSmall)
                 if (!choosing) {
@@ -101,13 +100,13 @@ import cn.qingji.core.*
         } }
     } }
     templateTargets?.let { targets -> ClassificationChoiceDialog("选择场景模板", onDismiss = { templateTargets = null }) {
-        Text("分类会按模板修改；商家和备注只补空白项。", color = Muted, style = MaterialTheme.typography.bodySmall)
+        Text("分类会按模板修改；备注仅在空白时补充，已有备注会保留。", color = Muted, style = MaterialTheme.typography.bodySmall)
         val usableTemplates = templates.filter { it.category in usable }
         if (usableTemplates.isEmpty()) {
             Text("还没有可用模板，请先创建模板或为模板选择分类。", color = Muted)
             Button(onClick = { templateTargets = null; onManageTemplates() }) { Text("创建场景模板") }
         } else LazyColumn(Modifier.heightIn(max = 420.dp)) { items(usableTemplates, key = { it.id }) { template ->
-            ListItem(headlineContent = { Text(template.label) }, supportingContent = { Text(listOf(template.category.label, template.merchant.ifBlank { "商家不填" }).joinToString(" · ")) },
+            ListItem(headlineContent = { Text(template.label) }, supportingContent = { Text(listOfNotNull(template.category.label, template.note.takeIf { it.isNotBlank() }).joinToString(" · ")) },
                 modifier = Modifier.clickable { templateTargets = null; onTemplate(targets, template.id) })
         } }
     } }
@@ -133,7 +132,7 @@ import cn.qingji.core.*
     if (creating || editing != null) {
         TemplateEditorDialog(editing, templates, categories, busy, onDismiss = { creating = false; editing = null }, onSave = { template -> onSave(template) { creating = false; editing = null } })
     } else ClassificationChoiceDialog("场景模板", onDismiss) {
-        Text("设置一次，以后点一下就能归类。模板不设置金额和时间，商家可以留空。", color = Muted, style = MaterialTheme.typography.bodySmall)
+        Text("选择分类，按需填写备注。设置一次，以后点一下就能归类。", color = Muted, style = MaterialTheme.typography.bodySmall)
         LazyColumn(Modifier.weight(1f, fill = false).heightIn(max = 420.dp)) {
             if (templates.isEmpty()) item { Text("还没有模板，可新增自己的场景，或添加早餐、午餐等常用模板。", color = Muted) }
             items(templates, key = { it.id }) { template ->
@@ -143,7 +142,7 @@ import cn.qingji.core.*
                     Column(Modifier.weight(1f)) {
                         Text(template.label, style = MaterialTheme.typography.titleMedium)
                         Text(if (template.category == Category.UNCATEGORIZED) "需重新选择分类" else template.category.label, color = if (template.category == Category.UNCATEGORIZED) Amber else Muted, style = MaterialTheme.typography.bodySmall)
-                        Text(template.merchant.ifBlank { "商家不填" }, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall)
+                        if (template.note.isNotBlank()) Text(template.note, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall)
                     }
                     IconButton(enabled = !busy && index > 0, onClick = { onMove(template.id, -1) }) { Icon(Icons.Default.ArrowUpward, "上移模板${template.label}", Modifier.size(18.dp)) }
                     IconButton(enabled = !busy && index < templates.lastIndex, onClick = { onMove(template.id, 1) }) { Icon(Icons.Default.ArrowDownward, "下移模板${template.label}", Modifier.size(18.dp)) }
@@ -173,7 +172,6 @@ import cn.qingji.core.*
 @Composable private fun TemplateEditorDialog(seed: QuickTemplate?, templates: List<QuickTemplate>, categories: List<Category>, busy: Boolean,
     onDismiss: () -> Unit, onSave: (QuickTemplate) -> Unit) {
     var label by remember { mutableStateOf(seed?.label.orEmpty()) }
-    var merchant by remember { mutableStateOf(seed?.merchant.orEmpty()) }
     var note by remember { mutableStateOf(seed?.note.orEmpty()) }
     val usable = categories.filter { it != Category.UNCATEGORIZED }
     var category by remember { mutableStateOf(seed?.category?.takeIf { it in usable } ?: usable.firstOrNull() ?: Category.UNCATEGORIZED) }
@@ -182,13 +180,12 @@ import cn.qingji.core.*
         Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             OutlinedTextField(label, { label = it; error = "" }, modifier = Modifier.fillMaxWidth(), singleLine = true, label = { Text("模板名称") }, placeholder = { Text("例如：二食堂") })
             ChoiceField("模板分类", category, usable, { it.label }, { category = it })
-            OutlinedTextField(merchant, { merchant = it }, modifier = Modifier.fillMaxWidth(), singleLine = true, label = { Text("模板商家（选填）") }, supportingText = { Text("留空时不补写商家，也能完成分类。") })
             OutlinedTextField(note, { note = it }, modifier = Modifier.fillMaxWidth(), label = { Text("模板备注（选填）") }, maxLines = 3)
-            Text("套用模板时只补空白商家和备注，已有内容会保留。", style = MaterialTheme.typography.labelSmall, color = Muted)
+            Text("套用模板会设置分类，只补充空白备注；金额、时间和已有备注会保留。", style = MaterialTheme.typography.labelSmall, color = Muted)
             if (error.isNotBlank()) Text(error, color = Amber)
         }
         Button(enabled = !busy, modifier = Modifier.fillMaxWidth(), onClick = {
-            val candidate = (seed ?: QuickTemplate(label = label.trim(), category = category)).copy(label = label.trim(), merchant = merchant.trim(), note = note.trim(), category = category)
+            val candidate = (seed ?: QuickTemplate(label = label.trim(), category = category)).copy(label = label.trim(), note = note.trim(), category = category)
             runCatching {
                 QuickClassification.validate(candidate)
                 require(candidate.category in usable) { "请选择具体分类" }

@@ -78,7 +78,7 @@ import kotlin.math.abs
         if (unclassified > 0) item {
             Panel(color = Color(0xFFE5EFE6), modifier = Modifier.clickable(onClick = onQuickClassify)) {
                 SectionTitle("$unclassified 笔账单等你归类", "快捷归类", onQuickClassify)
-                Text("点分类或套用常用场景，商家可以不填。", color = Pine, style = MaterialTheme.typography.bodySmall)
+                Text("点分类或套用常用场景，需要补充的内容写备注。", color = Pine, style = MaterialTheme.typography.bodySmall)
             }
         }
         item {
@@ -114,7 +114,7 @@ import kotlin.math.abs
         entries.filter { entry ->
             (if (filter != null) filter.matches(entry) else when (state) { "待确认" -> entry.status == Status.PENDING; "已忽略" -> entry.status == Status.IGNORED; else -> entry.status != Status.IGNORED }) &&
                 (channel == "全部渠道" || entry.channel.label == channel) &&
-                (query.isBlank() || listOf(entry.merchant, entry.note, entry.category.label, entry.transactionId.orEmpty()).any { it.contains(query.trim(), true) })
+                (query.isBlank() || listOf(entry.note, entry.category.label, entry.transactionId.orEmpty()).any { it.contains(query.trim(), true) })
         }.sortedByDescending { it.occurredAt }
     }
     val grouped = selected.groupBy { displayTime(it.occurredAt, "yyyy-MM-dd") }
@@ -124,12 +124,12 @@ import kotlin.math.abs
             Text("账单", Modifier.weight(1f), style = MaterialTheme.typography.headlineLarge)
             TextButton(onClick = { onExport(selected) }, enabled = selected.isNotEmpty()) { Text("导出CSV") }
         } }
-        item { OutlinedTextField(query, { query = it }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), singleLine = true, placeholder = { Text("搜索商家、分类、备注或交易号") }, leadingIcon = { Icon(Icons.Default.Search, "搜索") }) }
+        item { OutlinedTextField(query, { query = it }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), singleLine = true, placeholder = { Text("搜索分类、备注或交易号") }, leadingIcon = { Icon(Icons.Default.Search, "搜索") }) }
         item { OutlinedButton(onClick = onQuickClassify) { Text("快捷归类 · ${entries.count(QuickClassification::needsCategory)} 笔待归类") } }
         if (filter != null) item {
             Panel(color = Color(0xFFE5EFE6)) {
                 Text(filter.title, style = MaterialTheme.typography.titleMedium)
-                if (filter.category != null || filter.merchant != null) Text(listOfNotNull(filter.category, filter.merchant).joinToString(" · "), color = Pine)
+                if (filter.category != null) Text(filter.category, color = Pine)
                 TextButton(onClick = onClear) { Text("清除分析筛选") }
             }
         } else item { Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -218,22 +218,13 @@ import kotlin.math.abs
                 } }
             }
         }
-        item {
-            Panel {
-                SectionTitle("商家净消费排名")
-                if (report.merchants.isEmpty()) Text("本期暂无商家记录", color = Muted)
-                report.merchants.take(10).forEach { item ->
-                    BreakdownItem(item, report.merchants.maxOfOrNull { abs(it.value) } ?: 1) { onFilter(EntryFilter.range(report.range, "商家明细", merchant = item.key)) }
-                    Text("较上期 ${if (item.delta > 0) "+" else ""}${displayMoney(item.delta)}", color = Muted, style = MaterialTheme.typography.labelSmall)
-                }
-            }
-        }
+
     }
 }
 
-@Composable fun SettingsScreen(health: Diagnostics, rules: List<MerchantRule>, imports: List<ImportReceipt>,
+@Composable fun SettingsScreen(health: Diagnostics, imports: List<ImportReceipt>,
     onAuthorize: () -> Unit, onImport: () -> Unit, onBackup: () -> Unit, onRestore: () -> Unit,
-    onRemoveRule: (MerchantRule) -> Unit, onReconnect: () -> Unit, onAppSettings: () -> Unit,
+    onReconnect: () -> Unit, onAppSettings: () -> Unit,
     updateState: UpdateUiState, onCheckUpdate: () -> Unit, onBackgroundUpdate: (Boolean) -> Unit, onOpenUpdate: () -> Unit,
     categoryCount: Int, onManageCategories: () -> Unit, onExportAll: () -> Unit,
     onEnablePage: () -> Unit, onDisablePage: () -> Unit, onViewPending: () -> Unit, onCopyPageDiagnostic: () -> Unit,
@@ -248,7 +239,7 @@ import kotlin.math.abs
         item { NotificationCapturePanel(health, onAuthorize, onReconnect, onCopyNotificationDiagnostic) }
         item { Panel {
             SectionTitle("快捷归类")
-            Text("$templateCount 个场景模板 · 商家选填 · 支持批量分类", color = Muted, style = MaterialTheme.typography.bodySmall)
+            Text("$templateCount 个场景模板 · 分类与备注 · 支持批量分类", color = Muted, style = MaterialTheme.typography.bodySmall)
             Button(onClick = onQuickClassify) { Text("整理待归类账单") }
             OutlinedButton(onClick = onManageTemplates) { Text("管理场景模板") }
         } }
@@ -275,11 +266,6 @@ import kotlin.math.abs
             SectionTitle("消费分类")
             Text("$categoryCount 个可用分类 · 支持排序与删除", color = Muted, style = MaterialTheme.typography.bodySmall)
             OutlinedButton(onClick = onManageCategories) { Text("管理消费分类") }
-        } }
-        item { SectionTitle("商家分类规则 · ${rules.size} 条") }
-        if (rules.isEmpty()) item { Panel { Text("修改账单时勾选“记住该商家的分类”，后续交易将优先使用你的规则。", color = Muted, style = MaterialTheme.typography.bodySmall) } }
-        items(rules, key = { normalizeMerchant(it.merchant) }) { rule -> Panel {
-            Row(verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(rule.merchant); Text(rule.category.label, color = Pine, style = MaterialTheme.typography.bodySmall) }; TextButton(onClick = { onRemoveRule(rule) }) { Text("删除规则") } }
         } }
         if (imports.isNotEmpty()) item { Panel {
             SectionTitle("最近导入")

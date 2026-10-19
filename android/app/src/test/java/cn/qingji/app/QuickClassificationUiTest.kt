@@ -56,13 +56,13 @@ class QuickClassificationUiTest {
         compose.onNodeWithText("账单", useUnmergedTree = true).performClick()
         waitFor { compose.onAllNodesWithText("快捷归类 · 3 笔待归类").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("快捷归类 · 3 笔待归类").performClick()
-        compose.onNodeWithText("待归类 3 笔 · 商家可不填").assertExists()
+        compose.onNodeWithText("待归类 3 笔 · 选择消费分类").assertExists()
         screenshot("10-quick-classification")
         compose.onNodeWithText("管理模板").performClick()
         compose.onNodeWithText("新增模板").performClick()
         compose.onNodeWithText("模板名称").performTextInput("二食堂")
-        compose.onNodeWithText("模板商家（选填）").performTextInput("二食堂")
-        compose.onNodeWithText("模板备注（选填）").performTextInput("午餐")
+        compose.onNodeWithText("模板商家（选填）").assertDoesNotExist()
+        compose.onNodeWithText("模板备注（选填）").performTextInput("二食堂午餐")
         compose.onNodeWithText("保存模板").performClick()
         waitFor { data().quickTemplates.size == 1 }
         compose.onNodeWithText("添加常用模板").performClick()
@@ -81,7 +81,8 @@ class QuickClassificationUiTest {
         compose.onNode(hasText("套用场景模板") and hasAnyAncestor(hasTestTag("quick-entry-q1"))).performScrollTo().performClick()
         compose.onNodeWithText("二食堂午餐").performClick()
         waitFor { data().entries.single { it.id == "q1" }.category == Category.FOOD }
-        assertEquals("二食堂", data().entries.single { it.id == "q1" }.merchant)
+        assertEquals("未知商家", data().entries.single { it.id == "q1" }.merchant)
+        assertEquals("二食堂午餐", data().entries.single { it.id == "q1" }.note)
         assertEquals(1L, data().quickTemplates.single { it.label == "二食堂午餐" }.useCount)
         compose.onNodeWithText("批量选择").performClick()
         compose.onNodeWithText("全选当前列表").performClick()
@@ -106,12 +107,13 @@ class QuickClassificationUiTest {
         compose.onNodeWithText("删除模板“二食堂午餐”？").assertExists()
         compose.onNodeWithText("删除模板").performClick()
         waitFor { data().quickTemplates.none { it.label == "二食堂午餐" } }
-        assertEquals("二食堂", data().entries.single { it.id == "q1" }.merchant)
+        assertEquals("未知商家", data().entries.single { it.id == "q1" }.merchant)
+        assertEquals("二食堂午餐", data().entries.single { it.id == "q1" }.note)
         compose.onNodeWithText("关闭").performClick()
-        sceneWithoutMerchantCanBeUsedForManualEntryAndRecordsUsageOnlyAfterSave()
+        categoryAndNoteFormPreservesLegacyMetadataAndRecordsUsageOnlyAfterSave()
     }
-    private fun sceneWithoutMerchantCanBeUsedForManualEntryAndRecordsUsageOnlyAfterSave() {
-        val scene = QuickTemplate(id = "lunch", label = "午餐", category = Category.FOOD, note = "午餐")
+    private fun categoryAndNoteFormPreservesLegacyMetadataAndRecordsUsageOnlyAfterSave() {
+        val scene = QuickTemplate(id = "lunch", label = "午餐", category = Category.FOOD, merchant = "旧模板商家", note = "午餐")
         runBlocking(Dispatchers.IO) { repo.restore(BackupData(entries = emptyList(), rules = emptyList(), imports = emptyList(), quickTemplates = listOf(scene))) }
         waitFor { data().quickTemplates.size == 1 }
         compose.onNodeWithText("首页", useUnmergedTree = true).performClick()
@@ -119,13 +121,27 @@ class QuickClassificationUiTest {
         compose.onNodeWithText("金额（元）").performTextInput("19.80")
         waitFor { compose.onAllNodesWithTag("template-lunch").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("template-lunch").performClick()
-        compose.onNodeWithText("商家 / 收款方（选填）").assertExists()
-        screenshot("13-optional-merchant")
+        compose.onNodeWithText("商家 / 收款方（选填）").assertDoesNotExist()
+        compose.onNodeWithText("记住该商家的分类，用于后续交易").assertDoesNotExist()
+        compose.onNodeWithText("备注（选填）").assertExists()
+        screenshot("13-category-note-editor")
         assertEquals(0L, data().quickTemplates.single().useCount)
         compose.onNodeWithText("保存账单").performClick()
         waitFor { data().entries.size == 1 }
         assertEquals("未知商家", data().entries.single().merchant)
         assertEquals(Category.FOOD, data().entries.single().category); assertEquals(1980L, data().entries.single().amountFen)
         assertEquals(1L, data().quickTemplates.single().useCount)
+        val legacy = entry("legacy").copy(merchant = "历史面馆", category = Category.FOOD, note = "原有备注", editedFields = setOf("merchant"))
+        runBlocking(Dispatchers.IO) { repo.restore(BackupData(entries = listOf(legacy), rules = emptyList(), imports = emptyList())) }
+        compose.onNodeWithText("账单", useUnmergedTree = true).performClick()
+        waitFor { compose.onAllNodesWithText("原有备注").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("历史面馆").assertDoesNotExist()
+        compose.onNodeWithText("原有备注").performClick()
+        compose.onNodeWithText("备注（选填）").performTextReplacement("补充用途")
+        compose.onNodeWithText("保存账单").performClick()
+        waitFor { data().entries.single().note == "补充用途" }
+        assertEquals("历史面馆", data().entries.single().merchant)
+        assertEquals(legacy.amountFen, data().entries.single().amountFen)
+        assertEquals(legacy.category, data().entries.single().category)
     }
 }

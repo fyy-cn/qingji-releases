@@ -31,16 +31,16 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import cn.qingji.core.*
 import java.time.LocalDate
 
-data class EntryFilter(val title: String, val start: Long? = null, val end: Long? = null, val category: String? = null, val merchant: String? = null, val pendingOnly: Boolean = false) {
+data class EntryFilter(val title: String, val start: Long? = null, val end: Long? = null, val category: String? = null, val pendingOnly: Boolean = false) {
     fun matches(entry: Entry): Boolean {
         if (pendingOnly) return entry.status == Status.PENDING
         return entry.status == Status.CONFIRMED && entry.currency == "CNY" && entry.kind in listOf(Kind.EXPENSE, Kind.REFUND) &&
             (start == null || entry.occurredAt >= start) && (end == null || entry.occurredAt < end) &&
-            (category == null || entry.category.label == category) && (merchant == null || entry.merchant == merchant)
+            (category == null || entry.category.label == category)
     }
     companion object {
-        fun range(range: DateRange, title: String = range.label, category: String? = null, merchant: String? = null) = EntryFilter(title,
-            range.start.atStartOfDay(ledgerZone).toInstant().toEpochMilli(), range.endExclusive.atStartOfDay(ledgerZone).toInstant().toEpochMilli(), category, merchant)
+        fun range(range: DateRange, title: String = range.label, category: String? = null) = EntryFilter(title,
+            range.start.atStartOfDay(ledgerZone).toInstant().toEpochMilli(), range.endExclusive.atStartOfDay(ledgerZone).toInstant().toEpochMilli(), category)
     }
 }
 data class Diagnostics(val access: Boolean = false, val connectedAt: Long = 0, val lastAt: Long = 0, val lastAction: String = "", val channel: String = "", val error: String = "", val wechat: String = "未安装", val alipay: String = "未安装", val page: PaymentPageHealth = PaymentPageHealth(), val notification: NotificationHealth = NotificationHealth(), val campus: CampusApp? = null)
@@ -57,7 +57,6 @@ fun diagnostics(context: Context): Diagnostics {
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
     val entries by vm.entries.collectAsStateWithLifecycle()
-    val rules by vm.rules.collectAsStateWithLifecycle()
     val imports by vm.imports.collectAsStateWithLifecycle()
     val categories by vm.categories.collectAsStateWithLifecycle()
     val templates by vm.templates.collectAsStateWithLifecycle()
@@ -129,8 +128,8 @@ fun diagnostics(context: Context): Diagnostics {
                         onPending = { openFilter(EntryFilter("待确认账单", pendingOnly = true)) }, onEntry = { edit(it) }, onFilter = ::openFilter, onAnalysis = { selected = 2 }, onQuickClassify = ::quickClassify)
                     1 -> LedgerScreen(entries, filter, onClear = { filter = null }, onEntry = { edit(it) }, onExport = { records -> vm.prepareCsv(records) { csvLauncher.launch("清记账单-$today.csv") } }, onQuickClassify = ::quickClassify)
                     2 -> AnalysisScreen(entries, today, onFilter = ::openFilter)
-                    3 -> SettingsScreen(health, rules, imports, onAuthorize = { showDisclosure = true }, onImport = ::importFile,
-                        onBackup = { backupMode = "backup" }, onRestore = { restoreLauncher.launch(arrayOf("*/*")) }, onRemoveRule = vm::removeRule,
+                    3 -> SettingsScreen(health, imports, onAuthorize = { showDisclosure = true }, onImport = ::importFile,
+                        onBackup = { backupMode = "backup" }, onRestore = { restoreLauncher.launch(arrayOf("*/*")) },
                         onAppSettings = { runCatching { context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:${context.packageName}".toUri())) }.onFailure { vm.messages.tryEmit("请长按清记图标打开应用信息") } },
                         onReconnect = { vm.messages.tryEmit(NotificationMonitor.ensureConnected(context, manual = true)); health = diagnostics(context) },
                         updateState = updateState, onCheckUpdate = { updater.check() }, onBackgroundUpdate = updater::background, onOpenUpdate = updater::openRelease,
@@ -168,7 +167,7 @@ fun diagnostics(context: Context): Diagnostics {
     if (showEditor) EntryEditor(editing, entries, onDismiss = { showEditor = false }, onSave = { entry, rule, templateId -> vm.save(entry, rule, templateId); showEditor = false },
         onIgnore = { vm.ignore(it); showEditor = false }, onMerge = { id, target -> vm.merge(id, target); showEditor = false }, categories = categories, templates = templates)
     if (showTemplates) TemplateManagerDialog(templates, categories, busy, onDismiss = { showTemplates = false }, onSave = vm::saveTemplate, onDelete = vm::deleteTemplate, onMove = vm::moveTemplate, onStarters = vm::addStarterTemplates)
-    if (showCategories) CategoryManagerDialog(categories, entries, rules, busy, onDismiss = { showCategories = false }, onAdd = vm::addCategory, onRename = vm::renameCategory, onDelete = vm::deleteCategory, onMove = vm::moveCategory, onRestoreBuiltIns = vm::restoreBuiltInCategories)
+    if (showCategories) CategoryManagerDialog(categories, entries, busy, onDismiss = { showCategories = false }, onAdd = vm::addCategory, onRename = vm::renameCategory, onDelete = vm::deleteCategory, onMove = vm::moveCategory, onRestoreBuiltIns = vm::restoreBuiltInCategories)
     preview?.let { ImportDialog(it, onDismiss = { if (!busy) vm.preview.value = null }, onCommit = vm::commit, busy = busy) }
     if (showDisclosure) AlertDialog(onDismissRequest = { showDisclosure = false }, title = { Text("开启支付通知记账") },
         text = { Text("系统通知使用权允许应用访问通知。清记只处理微信、支付宝及你选择的校园应用的交易候选通知，数据保存在本机，不上传。\n\n识别不到或未收到的通知需要核对补齐。前往系统设置后，请开启“清记 · 支付通知记账”。") },
@@ -184,6 +183,6 @@ fun diagnostics(context: Context): Diagnostics {
         restoreUri = null
     })
     restored?.let { data -> AlertDialog(onDismissRequest = { vm.restoredData.value = null }, title = { Text("恢复备份") },
-        text = { Text("备份包含 ${data.entries.size} 笔记录、${data.rules.size} 条商家规则。\n备份时间：${displayTime(data.exportedAt, "yyyy-MM-dd HH:mm")}\n\n恢复将替换本机现有账单与规则。建议先备份当前数据。") },
+        text = { Text("备份包含 ${data.entries.size} 笔记录、${data.quickTemplates.size} 个场景模板。\n备份时间：${displayTime(data.exportedAt, "yyyy-MM-dd HH:mm")}\n\n恢复将替换本机现有账单、分类与模板。建议先备份当前数据。") },
         confirmButton = { TextButton(onClick = vm::restore, enabled = !busy) { Text("替换并恢复") } }, dismissButton = { TextButton(onClick = { vm.restoredData.value = null }) { Text("取消") } }) }
 }

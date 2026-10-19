@@ -45,18 +45,20 @@ class CategoryCsvTests {
         assertArrayEquals(byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()), output.toByteArray().take(3).toByteArray())
         val csv = output.toString("UTF-8")
         assertTrue(csv.contains("交易时间（北京时间）")); assertTrue(csv.contains("2026-10-16 00:00:00"))
+        assertFalse(csv.contains("商家/收款方")); assertFalse(csv.contains("测试商家"))
+        assertEquals(13, csv.lineSequence().first().split(",").size)
         assertTrue(csv.contains("\"学习\"")); assertTrue(csv.contains("\"28.50\"")); assertTrue(csv.contains("\"已确认\""))
     }
     @Test fun csvPreservesCommasQuotesNewlinesRefundAndStatus() {
         val output = ByteArrayOutputStream()
-        LedgerCsv.write(listOf(entry().copy(merchant = "面馆,\"分店\"", note = "第一行\n第二行", kind = Kind.REFUND, status = Status.PENDING)), output)
+        LedgerCsv.write(listOf(entry().copy(merchant = "面馆,\"分店\"", note = "面馆,\"分店\"\n第二行", kind = Kind.REFUND, status = Status.PENDING)), output)
         val csv = output.toString("UTF-8")
-        assertTrue(csv.contains("\"面馆,\"\"分店\"\"\"")); assertTrue(csv.contains("\"第一行\n第二行\""))
+        assertTrue(csv.contains("\"面馆,\"\"分店\"\"\n第二行\""))
         assertTrue(csv.contains("\"退款\"")); assertTrue(csv.contains("\"待确认\""))
     }
     @Test fun csvNeutralizesSpreadsheetFormulasAndPreservesLongTransactionIds() {
         val output = ByteArrayOutputStream()
-        LedgerCsv.write(listOf(entry().copy(merchant = "=HYPERLINK(\"https://example.com\")", note = "  +1+1", transactionId = "20261016000000000001")), output)
+        LedgerCsv.write(listOf(entry().copy(note = "=HYPERLINK(\"https://example.com\")", transactionId = "20261016000000000001"), entry().copy(note = "  +1+1")), output)
         val csv = output.toString("UTF-8")
         assertTrue(csv.contains("\"'=HYPERLINK")); assertTrue(csv.contains("\"'  +1+1\"")); assertTrue(csv.contains("\"'20261016000000000001\""))
     }

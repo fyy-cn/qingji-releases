@@ -45,7 +45,6 @@ import java.time.format.ResolverStyle
 @Composable fun EntryEditor(seed: Entry?, allEntries: List<Entry>, onDismiss: () -> Unit, onSave: (Entry, Boolean, String?) -> Unit,
     onIgnore: (Entry) -> Unit, onMerge: (String, String) -> Unit, categories: List<Category> = Category.entries, templates: List<QuickTemplate> = emptyList()) {
     var amount by remember(seed?.id) { mutableStateOf(seed?.amountFen?.takeIf { it > 0 }?.let(::money) ?: "") }
-    var merchant by remember(seed?.id) { mutableStateOf(seed?.merchant?.takeUnless { it == "未知商家" } ?: "") }
     var category by remember(seed?.id) { mutableStateOf(seed?.category ?: Category.UNCATEGORIZED) }
     var kind by remember(seed?.id) { mutableStateOf(seed?.kind?.takeUnless { it == Kind.UNKNOWN } ?: Kind.EXPENSE) }
     var channel by remember(seed?.id) { mutableStateOf(seed?.channel ?: Channel.MANUAL) }
@@ -53,7 +52,6 @@ import java.time.format.ResolverStyle
     val initialTime = remember(seed?.id) { Instant.ofEpochMilli(seed?.occurredAt ?: System.currentTimeMillis()).atZone(ledgerZone) }
     var date by remember(seed?.id) { mutableStateOf(initialTime.toLocalDate().toString()) }
     var time by remember(seed?.id) { mutableStateOf(initialTime.format(DateTimeFormatter.ofPattern("HH:mm:ss"))) }
-    var makeRule by remember { mutableStateOf(false) }
     var showRaw by remember { mutableStateOf(false) }
     var yuanConfirmed by remember { mutableStateOf(seed == null || seed.currency == "CNY") }
     var error by remember { mutableStateOf("") }
@@ -65,22 +63,20 @@ import java.time.format.ResolverStyle
         val localDate = runCatching { LocalDate.parse(date, DateTimeFormatter.ISO_LOCAL_DATE.withResolverStyle(ResolverStyle.STRICT)) }.getOrNull()
         val localTime = runCatching { LocalTime.parse(time) }.getOrNull()
         if (localDate == null || localDate.year !in 2000..2100 || localTime == null) { error = "请输入有效日期和时间，例如2026-10-16、12:30:00"; return }
-        if (merchant.length > 500 || note.length > 4000) { error = "商家最多500字，备注最多4000字"; return }
+        if (note.length > 4000) { error = "备注最多4000字"; return }
         if (!yuanConfirmed) { error = "请先核对人民币金额"; return }
         val at = localDate.atTime(localTime).atZone(ledgerZone).toInstant().toEpochMilli()
         val base = seed ?: Entry(occurredAt = at, channel = channel)
-        val newMerchant = merchant.trim().ifBlank { "未知商家" }
         val edited = buildSet {
             addAll(base.editedFields)
             if (seed == null || fen != base.amountFen) add("amount")
-            if (seed == null || newMerchant != base.merchant) add("merchant")
             if (seed == null || category != base.category) add("category")
             if (seed == null || note != base.note) add("note")
             if (seed == null || kind != base.kind) add("kind")
             if (seed == null || at != base.occurredAt) add("time")
         }
-        onSave(base.copy(amountFen = fen, currency = "CNY", occurredAt = at, merchant = newMerchant, category = category, kind = kind, channel = channel,
-            note = note, status = Status.CONFIRMED, editedFields = edited, reason = "", candidateIds = emptyList()), makeRule, appliedTemplateId)
+        onSave(base.copy(amountFen = fen, currency = "CNY", occurredAt = at, category = category, kind = kind, channel = channel,
+            note = note, status = Status.CONFIRMED, editedFields = edited, reason = "", candidateIds = emptyList()), false, appliedTemplateId)
     }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxWidth().padding(12.dp).imePadding().heightIn(max = 760.dp), shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp), color = Color.White) {
@@ -96,7 +92,6 @@ import java.time.format.ResolverStyle
                         Text("快捷场景", style = MaterialTheme.typography.labelLarge, color = Pine)
                         TemplateChips(usableTemplates) { template ->
                             category = template.category
-                            if (merchant.isBlank()) merchant = template.merchant
                             if (note.isBlank()) note = template.note
                             appliedTemplateId = template.id
                         }
@@ -106,21 +101,19 @@ import java.time.format.ResolverStyle
                         Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(yuanConfirmed, { yuanConfirmed = it }); Text("金额已核对为人民币", style = MaterialTheme.typography.bodySmall) }
                     }
                     OutlinedTextField(amount, { amount = it; error = "" }, label = { Text("金额（元）") }, prefix = { Text("¥ ") }, singleLine = true, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+                    ChoiceField("消费分类", category, (categories + category).distinct(), { it.label }, { category = it })
+                    TextButton(onClick = { addCategory = true }, enabled = categories.count { it.isCustom } < 100) { Text("新增自定义分类") }
+                    if (addCategory) CategoryNameFields(null, categories + category, onCancel = { addCategory = false }, onSave = { name -> category = Category.custom(name); addCategory = false })
+                    OutlinedTextField(note, { note = it }, label = { Text("备注（选填）") }, placeholder = { Text("地点、用途或其他想记住的信息") }, modifier = Modifier.fillMaxWidth(), minLines = 2, maxLines = 4)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         ChoiceField("交易类型", kind, Kind.entries.filter { it != Kind.UNKNOWN }, { it.label }, { kind = it }, Modifier.weight(1f))
                         ChoiceField("支付渠道", channel, Channel.entries, { it.label }, { channel = it }, Modifier.weight(1f))
                     }
-                    OutlinedTextField(merchant, { merchant = it }, label = { Text("商家 / 收款方（选填）") }, supportingText = { Text("可以留空，先把消费分好类。") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    ChoiceField("消费分类", category, (categories + category).distinct(), { it.label }, { category = it })
-                    TextButton(onClick = { addCategory = true }, enabled = categories.count { it.isCustom } < 100) { Text("新增自定义分类") }
-                    if (addCategory) CategoryNameFields(null, categories + category, onCancel = { addCategory = false }, onSave = { name -> category = Category.custom(name); addCategory = false })
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(date, { date = it }, label = { Text("日期") }, singleLine = true, modifier = Modifier.weight(1.2f), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii))
                         OutlinedTextField(time, { time = it }, label = { Text("时间") }, singleLine = true, modifier = Modifier.weight(1f), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii))
                     }
                     Text("时间均按北京时间记录；退款填写实际到账时间。", color = Muted, style = MaterialTheme.typography.labelSmall)
-                    OutlinedTextField(note, { note = it }, label = { Text("备注") }, modifier = Modifier.fillMaxWidth(), minLines = 2, maxLines = 4)
-                    Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(makeRule, { makeRule = it }); Text("记住该商家的分类，用于后续交易", style = MaterialTheme.typography.bodySmall) }
                     if (kind == Kind.TRANSFER || kind == Kind.INCOME) Text("此类型默认不计入消费统计。", color = Muted, style = MaterialTheme.typography.bodySmall)
                     if (seed != null) {
                         Text("来源：${seed.sources.joinToString("、")}\n交易号：${seed.transactionId ?: "未提供"}", color = Muted, style = MaterialTheme.typography.labelSmall)
@@ -130,7 +123,7 @@ import java.time.format.ResolverStyle
                         }
                         seed.candidateIds.mapNotNull { id -> allEntries.firstOrNull { it.id == id && it.status != Status.IGNORED } }.forEach { candidate ->
                             OutlinedButton(onClick = { onMerge(seed.id, candidate.id) }, modifier = Modifier.fillMaxWidth()) {
-                                Text("合并至 ${candidate.merchant} ${displayMoney(candidate.amountFen)}\n${displayTime(candidate.occurredAt)}")
+                                Text("合并至 ${candidate.category.label} ${displayMoney(candidate.amountFen)}\n${displayTime(candidate.occurredAt)}")
                             }
                         }
                     }
@@ -162,14 +155,13 @@ import java.time.format.ResolverStyle
     }
 }
 
-@Composable fun CategoryManagerDialog(categories: List<Category>, entries: List<Entry>, rules: List<MerchantRule>, busy: Boolean,
+@Composable fun CategoryManagerDialog(categories: List<Category>, entries: List<Entry>, busy: Boolean,
     onDismiss: () -> Unit, onAdd: (String) -> Unit, onRename: (Category, String) -> Unit, onDelete: (Category) -> Unit,
     onMove: (Category, Int) -> Unit, onRestoreBuiltIns: () -> Unit) {
     var showName by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Category?>(null) }
     var deleting by remember { mutableStateOf<Category?>(null) }
     val counts = remember(entries) { entries.groupingBy { it.category }.eachCount() }
-    val ruleCounts = remember(rules) { rules.groupingBy { it.category }.eachCount() }
     if (deleting == null) Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxWidth().padding(12.dp).imePadding().heightIn(max = 740.dp), shape = RoundedCornerShape(24.dp), color = Color.White) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -193,7 +185,7 @@ import java.time.format.ResolverStyle
                             }
                             Column(Modifier.weight(1f).padding(start = 10.dp)) {
                                 Text(category.label, style = MaterialTheme.typography.titleSmall)
-                                Text("${counts[category] ?: 0}笔账单 · ${ruleCounts[category] ?: 0}条规则", color = Muted, style = MaterialTheme.typography.labelSmall)
+                                Text("${counts[category] ?: 0}笔账单", color = Muted, style = MaterialTheme.typography.labelSmall)
                             }
                             IconButton(enabled = !busy && index > 0, onClick = { onMove(category, -1) }) { Icon(Icons.Default.ArrowUpward, "上移${category.label}", Modifier.size(18.dp)) }
                             IconButton(enabled = !busy && index < categories.lastIndex, onClick = { onMove(category, 1) }) { Icon(Icons.Default.ArrowDownward, "下移${category.label}", Modifier.size(18.dp)) }
@@ -218,7 +210,7 @@ import java.time.format.ResolverStyle
         }
     }
     deleting?.let { category -> AlertDialog(onDismissRequest = { deleting = null }, title = { Text("删除“${category.label}”？") },
-        text = { Text("${counts[category] ?: 0}笔相关账单会改为“未分类”，${ruleCounts[category] ?: 0}条商家规则会被移除。账单和金额会保留，使用此分类的场景模板需重新选分类。" + if (!category.isCustom) "\n\n之后可用“恢复内置”重新添加此分类，原账单不会自动改回。" else "") },
+        text = { Text("${counts[category] ?: 0}笔相关账单会改为“未分类”。账单和金额会保留，使用此分类的场景模板需重新选分类。" + if (!category.isCustom) "\n\n之后可用“恢复内置”重新添加此分类，原账单不会自动改回。" else "") },
         confirmButton = { TextButton(onClick = { onDelete(category); deleting = null }, enabled = !busy) { Text("删除分类") } },
         dismissButton = { TextButton(onClick = { deleting = null }) { Text("取消") } }) }
 }
@@ -232,7 +224,7 @@ import java.time.format.ResolverStyle
             Text("新增 ${preview.newCount} 笔\n待确认 ${preview.pendingCount} 笔\n重复 / 补全 ${preview.duplicateCount} 笔\n异常 / 跳过 ${preview.bill.issues.size} 行", color = Pine)
             Text("待确认记录不计入消费；重复交易只合并来源和补充缺失信息，保留人工分类与备注。", color = Muted, style = MaterialTheme.typography.bodySmall)
             preview.items.take(50).forEach { item -> Column {
-                Text("${item.action} · ${item.entry.merchant} · ${displayMoney(item.entry.amountFen)}", style = MaterialTheme.typography.bodySmall)
+                Text("${item.action} · ${item.entry.category.label} · ${displayMoney(item.entry.amountFen)}", style = MaterialTheme.typography.bodySmall)
                 Text("${item.entry.kind.label} · ${displayTime(item.entry.occurredAt)}", color = Muted, style = MaterialTheme.typography.labelSmall)
                 if (item.entry.reason.isNotBlank()) Text(item.entry.reason, color = Amber, style = MaterialTheme.typography.labelSmall)
             } }

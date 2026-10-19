@@ -61,8 +61,9 @@ fun deltaText(current: Long, previous: Long): String = if (previous == 0L) {
             Text(if (entry.kind == Kind.REFUND) "退" else entry.category.glyph, color = if (entry.status == Status.PENDING) Amber else Pine, fontWeight = FontWeight.SemiBold)
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(entry.merchant, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
-            Text("${entry.channel.label} · ${entry.category.label} · ${displayTime(entry.occurredAt, "HH:mm")}", style = MaterialTheme.typography.bodySmall, color = Muted)
+            Text(entry.category.label, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
+            Text("${entry.channel.label} · ${displayTime(entry.occurredAt, "HH:mm")}", style = MaterialTheme.typography.bodySmall, color = Muted)
+            if (entry.note.isNotBlank()) Text(entry.note, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = Muted)
             if (entry.status != Status.CONFIRMED) Text(entry.status.label, style = MaterialTheme.typography.labelSmall, color = Amber)
         }
         Column(horizontalAlignment = Alignment.End) {

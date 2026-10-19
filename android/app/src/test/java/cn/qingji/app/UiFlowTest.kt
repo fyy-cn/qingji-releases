@@ -57,22 +57,22 @@ class UiFlowTest {
         screenshot("01-home")
         compose.onNodeWithText("记一笔", useUnmergedTree = true).performClick()
         compose.onNodeWithText("金额（元）").performTextInput("28.50")
-        compose.onNodeWithText("商家 / 收款方（选填）").performTextInput("测试面馆")
+        compose.onNodeWithText("备注（选填）").performTextInput("测试面馆")
         compose.onNodeWithText("新增自定义分类").performClick()
         compose.onNodeWithText("分类名称").performScrollTo().performTextInput("学习")
         compose.onNodeWithText("保存分类").performScrollTo().performClick()
         compose.onNodeWithText("学习").assertExists()
         compose.onNodeWithText("保存账单").performClick()
-        compose.waitUntil(15000) { runBlocking(Dispatchers.IO) { repo.snapshot().entries.any { it.merchant == "测试面馆" && it.amountFen == 2850L } } }
+        compose.waitUntil(15000) { runBlocking(Dispatchers.IO) { repo.snapshot().entries.any { it.note == "测试面馆" && it.amountFen == 2850L } } }
         compose.waitForIdle()
         compose.onNodeWithText("账单", useUnmergedTree = true).performClick()
         compose.waitUntil(15000) { compose.onAllNodesWithText("测试面馆").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("测试面馆").assertIsDisplayed()
-        assertTrue(runBlocking(Dispatchers.IO) { repo.snapshot().entries.first { it.merchant == "测试面馆" }.category.isCustom })
+        assertTrue(runBlocking(Dispatchers.IO) { repo.snapshot().entries.first { it.note == "测试面馆" }.category.isCustom })
         screenshot("02-ledger")
-        val excluded = Entry(amountFen = 1000, occurredAt = System.currentTimeMillis(), merchant = "不应导出的商家", channel = Channel.MANUAL)
+        val excluded = Entry(amountFen = 1000, occurredAt = System.currentTimeMillis(), note = "不应导出的备注", channel = Channel.MANUAL)
         runBlocking(Dispatchers.IO) { repo.save(excluded, false) }
-        compose.onNodeWithText("搜索商家、分类、备注或交易号").performTextInput("测试面馆")
+        compose.onNodeWithText("搜索分类、备注或交易号").performTextInput("测试面馆")
         compose.onNodeWithText("导出CSV").performClick()
         val activity = Shadows.shadowOf(compose.activity)
         compose.waitUntil(15000) {
@@ -91,11 +91,12 @@ class UiFlowTest {
             csv.toString("UTF-8").contains("测试面馆")
         }
         assertTrue(csv.toString("UTF-8").contains("学习"))
-        assertTrue(!csv.toString("UTF-8").contains("不应导出的商家"))
+        assertTrue(!csv.toString("UTF-8").contains("不应导出的备注"))
         runBlocking(Dispatchers.IO) { repo.ignore(excluded.id) }
         compose.onNode(hasSetTextAction()).performTextClearance()
         compose.onNodeWithText("分析", useUnmergedTree = true).performClick()
         compose.onNodeWithText("消费分析").assertIsDisplayed()
+        compose.onNodeWithText("商家净消费排名").assertDoesNotExist()
         assertTrue(compose.onAllNodesWithText("¥28.50").fetchSemanticsNodes().isNotEmpty())
         screenshot("03-analysis")
         compose.onNodeWithText("设置", useUnmergedTree = true).performClick()

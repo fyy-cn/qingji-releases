@@ -13,10 +13,10 @@ class QuickClassificationTests {
         val old = entry()
         assertEquals(old.copy(category = Category.FOOD, editedFields = setOf("category")), QuickClassification.apply(old, Category.FOOD))
     }
-    @Test fun templateFillsMissingMerchantAndNoteAndMarksHumanChoices() {
+    @Test fun legacyTemplateOnlyFillsNoteAndMarksCategoryAndNoteChoices() {
         val old = entry()
         val next = QuickClassification.apply(old, template.category, template)
-        assertEquals(old.copy(category = Category.FOOD, merchant = "二食堂", note = "午餐", editedFields = setOf("category", "merchant", "note")), next)
+        assertEquals(old.copy(category = Category.FOOD, note = "午餐", editedFields = setOf("category", "note")), next)
     }
     @Test fun templatePreservesProvidedMerchantAndHumanNote() {
         val old = entry().copy(merchant = "已有真实商家", note = "人工备注", editedFields = setOf("note"))

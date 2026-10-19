@@ -48,11 +48,11 @@ class QuickClassificationRepositoryTest {
         assertTrue(runCatching { repo.classify(setOf("a", "missing"), category = Category.FOOD) }.isFailure)
         assertEquals(Category.UNCATEGORIZED, repo.snapshot().entries.first { it.id == "a" }.category)
     }
-    @Test fun templateApplicationFillsOnlyEmptyFieldsAndUsageSurvivesEditing() = runBlocking {
+    @Test fun legacyTemplateOnlyFillsEmptyNotesAndUsageSurvivesEditing() = runBlocking {
         repo.restore(BackupData(entries = listOf(entry("a"), entry("b").copy(merchant = "实际商家", note = "人工备注")), rules = emptyList(), imports = emptyList()))
         repo.saveTemplate(template); repo.classify(setOf("a", "b"), templateId = template.id)
         val rows = repo.snapshot().entries.associateBy { it.id }
-        assertEquals("二食堂", rows["a"]!!.merchant); assertEquals("午餐", rows["a"]!!.note)
+        assertEquals("未知商家", rows["a"]!!.merchant); assertEquals("午餐", rows["a"]!!.note)
         assertEquals("实际商家", rows["b"]!!.merchant); assertEquals("人工备注", rows["b"]!!.note)
         val used = repo.snapshot().quickTemplates.single(); assertEquals(1L, used.useCount); assertTrue(used.lastUsedAt > 0)
         repo.saveTemplate(template.copy(label = "食堂午餐"))
