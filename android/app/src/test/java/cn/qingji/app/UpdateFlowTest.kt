@@ -26,6 +26,7 @@ class TestReleaseClient : ReleaseClient {
     override suspend fun download(release: UpdateRelease, destination: File, progress: (Long) -> Unit) { error("Test downloads are disabled") }
 }
 class UpdateTestApplication : QingJiApplication() {
+    override val notificationRecoveryEnabled = false
     override val releaseClient = TestReleaseClient()
     override fun scheduleUpdates() { /* No background network in unit tests. */ }
 }

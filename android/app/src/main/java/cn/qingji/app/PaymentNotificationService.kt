@@ -7,9 +7,13 @@ open class QingJiApplication : Application(), androidx.work.Configuration.Provid
     val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     val repository: LedgerRepository by lazy { LedgerRepository(LedgerDatabase.open(this)) }
     open val updatesEnabled: Boolean = true
+    open val notificationRecoveryEnabled: Boolean = true
     open val releaseClient: ReleaseClient by lazy { HttpsReleaseClient() }
     override val workManagerConfiguration: androidx.work.Configuration
         get() = androidx.work.Configuration.Builder().build()
     open fun scheduleUpdates() { UpdateSchedule.configure(this) }
-    override fun onCreate() { super.onCreate(); scheduleUpdates() }
+    open fun scheduleNotificationRecovery() {
+        if (notificationRecoveryEnabled) NotificationRecovery.wake(this, "进程启动")
+    }
+    override fun onCreate() { super.onCreate(); scheduleUpdates(); scheduleNotificationRecovery() }
 }

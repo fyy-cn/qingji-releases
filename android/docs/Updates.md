@@ -4,7 +4,7 @@
 
 发布仓库：https://github.com/fyy-cn/qingji-releases
 
-1.7.0采用[分类与备注记账](QuickClassification.md)，去掉商家填写与展示，保留场景模板和批量分类；保留[校园来源与通知采集](NotificationCapture.md)。可选的[支付页面识别实验](PageRecognition.md)默认关闭，需要在手机上手动授权并验证；保留分类排序、CSV导出与完整源码包。发布状态见[验证报告](Verification.md)。
+1.7.1新增[通知连接检查与自动恢复](NotificationCapture.md)，沿用[分类与备注记账](QuickClassification.md)，去掉商家填写与展示，保留场景模板和批量分类；保留[校园来源与通知采集](NotificationCapture.md)。可选的[支付页面识别实验](PageRecognition.md)默认关闭，需要在手机上手动授权并验证；保留分类排序、CSV导出与完整源码包。发布状态见[验证报告](Verification.md)。
 
 ## 分类与CSV
 

@@ -5,6 +5,8 @@ import android.app.NotificationManager
 import android.content.ComponentName
 import android.content.Context
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
@@ -16,50 +18,111 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 data class NotificationHealth(val connected: Boolean = false, val receivedAt: Long = 0, val received: Long = 0,
-    val parsed: Long = 0, val lastChannel: String = "", val outcome: String = "尚未收到支持渠道的系统通知")
+    val parsed: Long = 0, val lastChannel: String = "", val outcome: String = "尚未收到支持渠道的系统通知",
+    val checkedAt: Long = 0, val watchdogAt: Long = 0, val nextRetryAt: Long = 0)
 
 object NotificationMonitor {
     @Volatile private var listener: PaymentNotificationService? = null
+    private val handler = Handler(Looper.getMainLooper())
     private var requestedAt: Long? = null
+    private var checkedElapsed: Long? = null
+    private var retry: Runnable? = null
+    private var retryElapsed: Long = 0
+    private var attempt = 0
+    internal var requestBinding: (ComponentName) -> Unit = NotificationListenerService::requestRebind
+    fun hasAccess(context: Context): Boolean = runCatching {
+        context.getSystemService(NotificationManager::class.java).isNotificationListenerAccessGranted(ComponentName(context, PaymentNotificationService::class.java))
+    }.getOrDefault(false)
     fun attached(service: PaymentNotificationService) = listener === service
-    fun connected(service: PaymentNotificationService) {
+    @Synchronized fun connected(service: PaymentNotificationService) {
         listener = service
+        requestedAt = null; checkedElapsed = null; attempt = 0
+        cancelRetry(service)
         service.getSharedPreferences("diagnostics", 0).edit { putLong("connectedAt", System.currentTimeMillis()); remove("lastError") }
+        NotificationRecovery.configure(service)
     }
-    fun disconnected(service: PaymentNotificationService) {
-        if (listener === service) {
-            listener = null
-            service.getSharedPreferences("diagnostics", 0).edit { putLong("notificationDisconnectedAt", System.currentTimeMillis()) }
+    @Synchronized fun disconnected(service: PaymentNotificationService, reason: String = "监听断开") {
+        // A late callback from an old instance must not disconnect its replacement.
+        if (listener != null && listener !== service) return
+        listener = null; checkedElapsed = null
+        service.getSharedPreferences("diagnostics", 0).edit { putLong("notificationDisconnectedAt", System.currentTimeMillis()) }
+        ensureConnected(service.applicationContext, manual = true, reason = reason)
+    }
+    @Synchronized fun checked(service: PaymentNotificationService) {
+        if (listener !== service) return
+        checkedElapsed = SystemClock.elapsedRealtime()
+        service.getSharedPreferences("diagnostics", 0).edit { putLong("notificationCheckedAt", System.currentTimeMillis()); remove("lastError") }
+    }
+    @Synchronized fun unavailable(service: PaymentNotificationService) {
+        if (listener !== service) return
+        listener = null; checkedElapsed = null
+        service.getSharedPreferences("diagnostics", 0).edit {
+            putLong("notificationDisconnectedAt", System.currentTimeMillis())
+            putString("lastError", "通知连接检查失败，正在自动重连")
         }
+        ensureConnected(service.applicationContext, manual = true, reason = "连接检查失败")
     }
-    @Synchronized fun ensureConnected(context: Context, manual: Boolean = false): String {
+    private fun cancelRetry(context: Context) {
+        retry?.let(handler::removeCallbacks); retry = null; retryElapsed = 0
+        context.getSharedPreferences("diagnostics", 0).edit { putLong("notificationNextRetryAt", 0) }
+    }
+    private fun queueRetry(context: Context, delay: Long) {
+        val app = context.applicationContext
+        val due = SystemClock.elapsedRealtime() + delay.coerceAtLeast(1000)
+        if (retry != null && retryElapsed <= due) return
+        retry?.let(handler::removeCallbacks)
+        retryElapsed = due
+        retry = Runnable {
+            synchronized(this) { retry = null; retryElapsed = 0 }
+            ensureConnected(app, reason = "断线自动重试")
+        }.also { handler.postDelayed(it, delay.coerceAtLeast(1000)) }
+        app.getSharedPreferences("diagnostics", 0).edit { putLong("notificationNextRetryAt", System.currentTimeMillis() + delay.coerceAtLeast(1000)) }
+    }
+    @Synchronized fun ensureConnected(context: Context, manual: Boolean = false, reason: String = "前台检查"): String {
         val component = ComponentName(context, PaymentNotificationService::class.java)
-        if (!context.getSystemService(NotificationManager::class.java).isNotificationListenerAccessGranted(component)) return "请先开启通知使用权"
-        listener?.let { if (manual) it.scanCurrent(); return if (manual) "已请求补读通知栏中仍保留的通知" else "通知监听已连接" }
-        val now = SystemClock.elapsedRealtime()
-        if (requestedAt?.let { now - it < if (manual) 5000 else 60_000 } == true) return "已请求连接，等待系统回调"
-        requestedAt = now
-        return runCatching {
-            NotificationListenerService.requestRebind(component)
-            context.getSharedPreferences("diagnostics", 0).edit { putLong("notificationRebindAt", System.currentTimeMillis()); remove("lastError") }
-            "已请求系统连接通知监听"
-        }.getOrElse {
-            context.getSharedPreferences("diagnostics", 0).edit { putString("lastError", "系统未接受通知重连请求，请检查通知使用权") }
-            "系统未接受通知重连请求"
+        if (!hasAccess(context)) {
+            listener = null; checkedElapsed = null; requestedAt = null; attempt = 0; cancelRetry(context)
+            return "请先开启通知使用权"
         }
+        val now = SystemClock.elapsedRealtime()
+        listener?.let {
+            if (manual || checkedElapsed?.let { checked -> now - checked >= 60_000 } != false) it.scanCurrent()
+            return if (listener != null) "已请求检查连接并补读当前通知" else "连接异常，已请求自动恢复"
+        }
+        val minimum = if (manual) 5000L else 10_000L
+        requestedAt?.let { last -> if (now - last < minimum) {
+            queueRetry(context, minimum - (now - last)); return "已请求连接，等待系统回调"
+        } }
+        requestedAt = now
+        val p = context.getSharedPreferences("diagnostics", 0)
+        val success = runCatching { requestBinding(component) }.isSuccess
+        attempt++
+        p.edit {
+            putLong("notificationRebindAt", System.currentTimeMillis())
+            putLong("notificationRebindCount", p.getLong("notificationRebindCount", 0) + 1)
+            putString("notificationRecoveryReason", reason)
+            if (!success) putString("lastError", "系统未接受通知重连请求，将自动重试")
+        }
+        queueRetry(context, longArrayOf(10_000, 30_000, 60_000, 300_000)[(attempt - 1).coerceAtMost(3)])
+        return if (success) "已请求系统连接通知监听，将自动跟进恢复" else "系统未接受通知重连请求，将自动重试"
     }
     fun health(context: Context): NotificationHealth {
         val p = context.getSharedPreferences("diagnostics", 0)
-        return NotificationHealth(listener != null, p.getLong("notificationReceivedAt", 0), p.getLong("notificationReceived", 0), p.getLong("notificationParsed", 0), p.getString("notificationChannel", "").orEmpty(), p.getString("notificationOutcome", "尚未收到支持渠道的系统通知").orEmpty())
+        return NotificationHealth(listener != null && hasAccess(context), p.getLong("notificationReceivedAt", 0), p.getLong("notificationReceived", 0), p.getLong("notificationParsed", 0), p.getString("notificationChannel", "").orEmpty(), p.getString("notificationOutcome", "尚未收到支持渠道的系统通知").orEmpty(), p.getLong("notificationCheckedAt", 0), p.getLong("notificationWatchdogAt", 0), p.getLong("notificationNextRetryAt", 0))
     }
     fun diagnostic(context: Context): String {
         val p = context.getSharedPreferences("diagnostics", 0); val h = health(context)
         val access = context.getSystemService(NotificationManager::class.java).isNotificationListenerAccessGranted(ComponentName(context, PaymentNotificationService::class.java))
         fun version(pkg: String) = runCatching { context.packageManager.getPackageInfo(pkg, 0).versionName }.getOrDefault("未安装")
         val campus = CampusSources.selected(context)
-        return "清记${BuildConfig.VERSION_NAME} 通知采集诊断\nAndroid ${Build.VERSION.RELEASE} / API ${Build.VERSION.SDK_INT}\n${Build.MANUFACTURER} ${Build.MODEL}\n微信${version("com.tencent.mm")}；支付宝${version("com.eg.android.AlipayGphone")}\n校园应用${campus?.label ?: "未选择"}；包名${campus?.packageName ?: "无"}\n通知使用权$access；当前进程监听连接${h.connected}\n最近连接${p.getLong("connectedAt",0)}；断开${p.getLong("notificationDisconnectedAt",0)}；请求重连${p.getLong("notificationRebindAt",0)}\n支持渠道通知回调/补读${h.received}次；已识别候选/补全${h.parsed}次\n最近渠道${h.lastChannel}；时间${h.receivedAt}；结果${h.outcome}\n结果代码${p.getString("notificationCode", "NONE")}；头部字符${p.getInt("notificationHeaderChars",0)}；正文字符${p.getInt("notificationBodyChars",0)}\n可用字段${p.getString("notificationFields", "无")}；最近回调来自${p.getString("notificationOrigin", "无")}\n最近保存结果${p.getString("lastAction", "无")}；错误${p.getString("lastError", "无")}\n诊断不包含通知标题/正文、商家、金额、交易号或聊天内容。"
+        val recovery = "\n连接检查${h.checkedAt}；后台检查${h.watchdogAt}；下次重试${h.nextRetryAt}\n自动恢复安排${p.getBoolean("notificationRecoveryScheduled", false)}；累计重连${p.getLong("notificationRebindCount", 0)}；触发${p.getString("notificationRecoveryReason", "无")}"
+        return "清记${BuildConfig.VERSION_NAME} 通知采集诊断\nAndroid ${Build.VERSION.RELEASE} / API ${Build.VERSION.SDK_INT}\n${Build.MANUFACTURER} ${Build.MODEL}\n微信${version("com.tencent.mm")}；支付宝${version("com.eg.android.AlipayGphone")}\n校园应用${campus?.label ?: "未选择"}；包名${campus?.packageName ?: "无"}\n通知使用权$access；当前进程监听连接${h.connected}\n最近连接${p.getLong("connectedAt",0)}；断开${p.getLong("notificationDisconnectedAt",0)}；请求重连${p.getLong("notificationRebindAt",0)}\n支持渠道通知回调/补读${h.received}次；已识别候选/补全${h.parsed}次\n最近渠道${h.lastChannel}；时间${h.receivedAt}；结果${h.outcome}\n结果代码${p.getString("notificationCode", "NONE")}；头部字符${p.getInt("notificationHeaderChars",0)}；正文字符${p.getInt("notificationBodyChars",0)}\n可用字段${p.getString("notificationFields", "无")}；最近回调来自${p.getString("notificationOrigin", "无")}\n最近保存结果${p.getString("lastAction", "无")}；错误${p.getString("lastError", "无")}\n诊断不包含通知标题/正文、商家、金额、交易号或聊天内容。" + recovery
     }
-    internal fun resetForTests() { listener = null; requestedAt = null }
+    @Synchronized internal fun resetForTests() {
+        retry?.let(handler::removeCallbacks); retry = null; retryElapsed = 0
+        listener = null; requestedAt = null; checkedElapsed = null; attempt = 0
+        requestBinding = NotificationListenerService::requestRebind
+    }
 }
 
 data class NotificationPart(val title: String, val headers: List<String>, val text: String, val time: Long, val key: String)
@@ -91,17 +154,21 @@ object PaymentNotificationReader {
 
 open class PaymentNotificationService : NotificationListenerService() {
     private val lock = Mutex()
-    override fun onListenerConnected() { NotificationMonitor.connected(this); scanCurrent() }
-    override fun onListenerDisconnected() { NotificationMonitor.disconnected(this); NotificationMonitor.ensureConnected(this, manual = true) }
-    override fun onDestroy() { NotificationMonitor.disconnected(this); super.onDestroy() }
+    private val mainHandler = Handler(Looper.getMainLooper())
+    override fun onListenerConnected() { super.onListenerConnected(); NotificationMonitor.connected(this); scanCurrent() }
+    override fun onListenerDisconnected() { NotificationMonitor.disconnected(this); super.onListenerDisconnected() }
+    override fun onDestroy() { NotificationMonitor.disconnected(this, "监听服务被回收"); super.onDestroy() }
     fun scanCurrent() {
+        if (Looper.myLooper() != Looper.getMainLooper()) { mainHandler.post { scanCurrent() }; return }
         if (!NotificationMonitor.attached(this)) return
-        (application as QingJiApplication).ioScope.launch {
-            if (!NotificationMonitor.attached(this@PaymentNotificationService)) return@launch
-            runCatching { activeNotifications?.toList().orEmpty() }.onSuccess { notifications ->
-                if (NotificationMonitor.attached(this@PaymentNotificationService)) notifications.filter { it.packageName in CampusSources.packages(this@PaymentNotificationService) }.take(100).forEach { receive(it, true) }
-            }.onFailure { getSharedPreferences("diagnostics", 0).edit { putString("lastError", "已连接，但当前通知补读失败，可稍后重试") } }
+        val notifications = runCatching { activeNotifications }.getOrNull()
+        if (notifications == null) {
+            NotificationMonitor.unavailable(this)
+            return
         }
+        if (!NotificationMonitor.attached(this)) return
+        NotificationMonitor.checked(this)
+        notifications.asSequence().filter { it.packageName in CampusSources.packages(this) }.take(100).forEach { receive(it, true) }
     }
     override fun onNotificationPosted(sbn: StatusBarNotification) { receive(sbn, false) }
     private fun receive(sbn: StatusBarNotification, recovered: Boolean) {

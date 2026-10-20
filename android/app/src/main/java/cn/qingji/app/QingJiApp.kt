@@ -80,7 +80,7 @@ fun diagnostics(context: Context): Diagnostics {
     var today by remember { mutableStateOf(LocalDate.now(ledgerZone)) }
     val snackbar = remember { SnackbarHostState() }
     DisposableEffect(owner) {
-        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) { NotificationMonitor.ensureConnected(context); health = diagnostics(context); today = LocalDate.now(ledgerZone); updater.resume() } }
+        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) { NotificationRecovery.wake(context, "返回前台"); health = diagnostics(context); today = LocalDate.now(ledgerZone); updater.resume() } }
         owner.lifecycle.addObserver(observer)
         onDispose { owner.lifecycle.removeObserver(observer) }
     }
@@ -91,7 +91,7 @@ fun diagnostics(context: Context): Diagnostics {
         preferences.registerOnSharedPreferenceChangeListener(listener); sources.registerOnSharedPreferenceChangeListener(listener)
         onDispose { preferences.unregisterOnSharedPreferenceChangeListener(listener); sources.unregisterOnSharedPreferenceChangeListener(listener) }
     }
-    LaunchedEffect(context) { NotificationMonitor.ensureConnected(context); health = diagnostics(context) }
+    LaunchedEffect(context) { NotificationRecovery.wake(context, "打开应用"); health = diagnostics(context) }
     LaunchedEffect(vm) { vm.messages.collect { snackbar.showSnackbar(it) } }
     LaunchedEffect(updateRequest) { if (updateRequest > 0) updater.check(true) else updater.resume() }
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(vm::import) }

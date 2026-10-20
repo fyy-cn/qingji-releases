@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageInfo
 import android.os.Process
+import android.os.Looper
 import android.service.notification.StatusBarNotification
 import androidx.test.core.app.ApplicationProvider
 import cn.qingji.core.*
@@ -22,11 +23,19 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.LooperMode
+import java.time.Duration
 
 class ProbeNotificationService : PaymentNotificationService() {
     var current = emptyArray<StatusBarNotification>()
     var reads = 0
-    override fun getActiveNotifications(): Array<StatusBarNotification> { reads++; return current }
+    var nullRead = false
+    var failRead = false
+    var readOnMain = true
+    override fun getActiveNotifications(): Array<StatusBarNotification>? {
+        reads++; readOnMain = readOnMain && Looper.myLooper() == Looper.getMainLooper()
+        if (failRead) throw SecurityException("synthetic disconnected service")
+        return if (nullRead) null else current
+    }
 }
 
 @RunWith(RobolectricTestRunner::class)
@@ -39,6 +48,7 @@ class NotificationCaptureTest {
     private val time = 1792301400000L
     @Before fun setup() {
         NotificationMonitor.resetForTests()
+        Shadows.shadowOf(context.getSystemService(NotificationManager::class.java)).setNotificationListenerAccessGranted(ComponentName(context, PaymentNotificationService::class.java), true)
         context.getSharedPreferences("diagnostics", 0).edit().clear().commit()
         context.getSharedPreferences("capture_sources", 0).edit().clear().commit()
         PaymentPageSettings.setEnabled(context, false)
@@ -125,5 +135,80 @@ class NotificationCaptureTest {
         Shadows.shadowOf(manager).setNotificationListenerAccessGranted(component, false)
         assertEquals("请先开启通知使用权", NotificationMonitor.ensureConnected(context, true))
         assertFalse(manager.isNotificationListenerAccessGranted(component))
+    }
+
+    @Test fun disconnectRetriesAndConnectionCancelsFurtherAttempts() {
+        var requests = 0; NotificationMonitor.requestBinding = { requests++ }
+        val service = Robolectric.buildService(ProbeNotificationService::class.java).create().get()
+        service.onListenerConnected(); service.onListenerDisconnected()
+        assertEquals(1, requests); assertFalse(NotificationMonitor.health(context).connected)
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(10)); assertEquals(2, requests)
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(30)); assertEquals(3, requests)
+        service.onListenerConnected()
+        assertTrue(NotificationMonitor.health(context).connected); assertEquals(0L, NotificationMonitor.health(context).nextRetryAt)
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(20)); assertEquals(3, requests)
+        service.onDestroy()
+    }
+    @Test fun destructionWithoutDisconnectCallbackStillRecovers() {
+        var requests = 0; NotificationMonitor.requestBinding = { requests++ }
+        val service = Robolectric.buildService(ProbeNotificationService::class.java).create().get()
+        service.onListenerConnected(); service.onDestroy()
+        assertFalse(NotificationMonitor.health(context).connected); assertEquals(1, requests)
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(10)); assertEquals(2, requests)
+    }
+    @Test fun nullReadInvalidatesStaleConnectionAndRebinds() {
+        var requests = 0; NotificationMonitor.requestBinding = { requests++ }
+        val service = Robolectric.buildService(ProbeNotificationService::class.java).create().get()
+        service.onListenerConnected(); service.nullRead = true
+        NotificationMonitor.ensureConnected(context, manual = true)
+        assertFalse(NotificationMonitor.health(context).connected); assertEquals(1, requests)
+        service.nullRead = false; service.onListenerConnected()
+        assertTrue(NotificationMonitor.health(context).connected); assertTrue(NotificationMonitor.health(context).checkedAt > 0)
+        service.onDestroy()
+    }
+    @Test fun failedReadDoesNotKeepFalseConnectedState() {
+        var requests = 0; NotificationMonitor.requestBinding = { requests++ }
+        val service = Robolectric.buildService(ProbeNotificationService::class.java).create().get()
+        service.onListenerConnected(); service.failRead = true; service.scanCurrent()
+        assertFalse(NotificationMonitor.health(context).connected); assertEquals(1, requests)
+        assertFalse(NotificationMonitor.diagnostic(context).contains("synthetic disconnected service")); service.onDestroy()
+    }
+    @Test fun revocationCancelsRetryAndDoesNotGrantPermission() {
+        var requests = 0; NotificationMonitor.requestBinding = { requests++ }
+        NotificationMonitor.ensureConnected(context); assertEquals(1, requests)
+        val manager = context.getSystemService(NotificationManager::class.java)
+        val component = ComponentName(context, PaymentNotificationService::class.java)
+        Shadows.shadowOf(manager).setNotificationListenerAccessGranted(component, false)
+        NotificationMonitor.ensureConnected(context)
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(20))
+        assertEquals(1, requests); assertFalse(manager.isNotificationListenerAccessGranted(component))
+        assertEquals(0L, NotificationMonitor.health(context).nextRetryAt)
+    }
+    @Test fun quietHealthyConnectionIsNotForciblyRebound() {
+        var requests = 0; NotificationMonitor.requestBinding = { requests++ }
+        val service = Robolectric.buildService(ProbeNotificationService::class.java).create().get()
+        service.onListenerConnected(); Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofHours(2))
+        NotificationMonitor.ensureConnected(context)
+        assertTrue(service.reads >= 2); assertEquals(0, requests); assertTrue(NotificationMonitor.health(context).connected)
+        service.onDestroy()
+    }
+    @Test fun oldServiceCannotDetachReplacement() {
+        var requests = 0; NotificationMonitor.requestBinding = { requests++ }
+        val old = Robolectric.buildService(ProbeNotificationService::class.java).create().get()
+        val replacement = Robolectric.buildService(ProbeNotificationService::class.java).create().get()
+        old.onListenerConnected(); replacement.onListenerConnected(); old.onListenerDisconnected(); old.onDestroy()
+        assertTrue(NotificationMonitor.attached(replacement)); assertEquals(0, requests); replacement.onDestroy()
+    }
+    @Test fun failedRequestRetriesWithoutFloodingBinder() {
+        var requests = 0; NotificationMonitor.requestBinding = { requests++; throw IllegalStateException("synthetic binder failure") }
+        repeat(10) { NotificationMonitor.ensureConnected(context) }; assertEquals(1, requests)
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(10)); assertEquals(2, requests)
+        assertFalse(NotificationMonitor.diagnostic(context).contains("synthetic binder failure"))
+    }
+    @Test fun backgroundProbeReadsServiceOnMainThread() {
+        val service = Robolectric.buildService(ProbeNotificationService::class.java).create().get()
+        service.onListenerConnected(); runBlocking(Dispatchers.IO) { service.scanCurrent() }
+        Shadows.shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(2, service.reads); assertTrue(service.readOnMain); service.onDestroy()
     }
 }

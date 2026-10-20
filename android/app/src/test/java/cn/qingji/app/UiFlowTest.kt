@@ -173,4 +173,7 @@ class UiFlowTest {
     }
 }
 
-class OfflineTestApplication : QingJiApplication() { override val updatesEnabled = false }
+class OfflineTestApplication : QingJiApplication() {
+    override val updatesEnabled = false
+    override val notificationRecoveryEnabled = false
+}

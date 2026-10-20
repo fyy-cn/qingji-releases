@@ -23,8 +23,8 @@ android {
         applicationId = "cn.qingji.app"
         minSdk = 29
         targetSdk = 35
-        versionCode = 8
-        versionName = "1.7.0"
+        versionCode = 9
+        versionName = "1.7.1"
         buildConfigField("String", "UPDATE_URL", quoted(updateFeed))
         buildConfigField("String", "DOWNLOAD_PAGE", quoted(downloadPage))
         buildConfigField("String", "GITHUB_REPOSITORY", quoted(githubRepository))
@@ -68,6 +68,7 @@ dependencies {
     testImplementation("org.robolectric:robolectric:4.14.1")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.1")
     testImplementation("androidx.test:core:1.6.1")
+    testImplementation("androidx.work:work-testing:2.10.1")
     testImplementation(platform("androidx.compose:compose-bom:2025.04.01"))
     testImplementation("androidx.compose.ui:ui-test-junit4")
     testImplementation("io.github.takahirom.roborazzi:roborazzi:1.44.0")

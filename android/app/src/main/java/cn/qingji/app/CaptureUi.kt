@@ -23,12 +23,14 @@ import kotlinx.coroutines.withContext
         Text(if (health.access && n.connected) "通知监听：已连接" else if (health.access) "通知监听：未连接，正在请求系统恢复" else "通知监听：等待授权", color = if (health.access && n.connected) Pine else Amber)
         Text("最近支持来源通知：${if (n.receivedAt == 0L) "尚未收到" else displayTime(n.receivedAt, "MM-dd HH:mm:ss")}\n${n.lastChannel} ${n.outcome}", style = MaterialTheme.typography.bodySmall, color = Muted)
         Text("回调/补读 ${n.received} 次 · 识别/补全 ${n.parsed} 次", style = MaterialTheme.typography.labelSmall, color = Muted)
+        Text("最近连接检查：${if (n.checkedAt == 0L) "尚未完成" else displayTime(n.checkedAt, "MM-dd HH:mm:ss")}\n后台检查：${if (n.watchdogAt == 0L) "等待系统调度" else displayTime(n.watchdogAt, "MM-dd HH:mm:ss")}", style = MaterialTheme.typography.labelSmall, color = Muted)
+        if (health.access && n.nextRetryAt > 0) Text("连接恢复中，将继续自动重试", color = Amber, style = MaterialTheme.typography.labelSmall)
         Text("最近候选账单：${if (health.lastAt == 0L) "尚未生成" else displayTime(health.lastAt, "MM-dd HH:mm:ss")} ${health.lastAction}", style = MaterialTheme.typography.labelSmall, color = Muted)
         if (health.error.isNotBlank()) Text(health.error, color = Amber)
         Button(onClick = onAuthorize) { Text(if (health.access) "管理通知授权" else "开启通知记账") }
         if (health.access) OutlinedButton(onClick = onReconnect) { Text("重连并补读当前通知") }
         TextButton(onClick = onCopy) { Text("复制通知诊断") }
-        Text("补读仅限仍保留在通知栏里的通知，已清除的通知需导入账单补齐。诊断会区分未连接、未收到、正文为空和模板过滤。", style = MaterialTheme.typography.labelSmall, color = Muted)
+        Text("断线后自动重试；后台定期检查连接，不依赖更新检查或网络。系统省电可能延迟恢复。补读仅限仍留在通知栏里的通知，已清除的通知需导入账单补齐。", style = MaterialTheme.typography.labelSmall, color = Muted)
     }
 }
 
